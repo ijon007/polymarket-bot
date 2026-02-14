@@ -1,45 +1,21 @@
-# Polymarket Bot
+# BTC 5-Minute Arbitrage Bot
 
-Minimal scaffold for a Python-based Polymarket trading bot.
+Scans Polymarket for BTC 5-minute up/down markets and executes arbitrage when YES + NO prices < $0.98.
 
 ## Setup
 
-1. Install dependencies:
+1. Install: `pip install -r requirements.txt`
+2. Create Neon database at neon.tech
+3. Copy `.env.example` to `.env` and add DATABASE_URL
+4. Run: `python main.py`
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Strategy
 
-2. Copy the example env file and fill in your values:
+- Scan every 10 seconds for BTC 5min markets
+- Check if YES price + NO price < $0.98
+- If yes → buy both sides (guaranteed profit)
+- Paper trade mode (logs to database, doesn't execute)
 
-   ```bash
-   cp .env.example .env
-   ```
+## Database
 
-## Neon database
-
-1. Sign up at [neon.tech](https://neon.tech).
-2. Create a new project and database.
-3. Copy the connection string from the dashboard.
-4. Set `DATABASE_URL` in `.env`. Use the PostgreSQL URL with `?sslmode=require` at the end (e.g. `postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require`).
-
-## Groq API key
-
-1. Get a free API key at [groq.com](https://groq.com).
-2. Set `GROQ_API_KEY=your_key_here` in `.env`.
-
-## Run the bot
-
-From the project root:
-
-```bash
-python -m src.bot.main
-```
-
-Or run the main module directly:
-
-```bash
-python src/bot/main.py
-```
-
-(Implement a `if __name__ == "__main__": run()` in `main.py` if you want the second form to work.)
+Check trades: `SELECT * FROM trades ORDER BY executed_at DESC;`
