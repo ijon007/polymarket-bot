@@ -1,12 +1,33 @@
 """Main bot loop: scan markets, apply logic filter and arbitrage layers, execute paper/real trades."""
 
+import threading
 import time
-
-from loguru import logger
 
 from src.bot import arbitrage, executor, logic_filter, scanner
 from src.risk import risk_limits
 from src.utils import config
+from src.utils.logger import get_logger
+
+logger = get_logger()
+
+MIN_QUICK_PROFIT_PCT = config.MIN_EDGE_ARB_QUICK * 100  # e.g. 2%
+
+
+def fast_scan_loop() -> None:
+    """Scan quick markets every FAST_SCAN_INTERVAL; internal arb only, lower threshold."""
+    while True:
+        try:
+            quick_markets = scanner.fetch_quick_markets()
+            logger.info("[FAST SCAN] Checking %d quick markets...", len(quick_markets))
+            for market in quick_markets:
+                arb = arbitrage.find_internal_arb(market, quick_mode=True)
+                if arb and arb["profit_pct"] > MIN_QUICK_PROFIT_PCT:
+                    logger.info("QUICK ARB: %s - %.2f%%", market.ticker, arb["profit_pct"])
+                    executor.execute_arb(market, arb)
+            time.sleep(config.FAST_SCAN_INTERVAL)
+        except Exception as e:
+            logger.error("Fast scan error: %s", e)
+            time.sleep(30)
 
 
 def main() -> None:
@@ -14,6 +35,9 @@ def main() -> None:
     logger.info("Starting Polymarket bot (Math-only mode)...")
     logger.info(f"Paper mode: {config.PAPER_MODE}")
     logger.info(f"Bankroll: ${config.BANKROLL}")
+
+    fast_thread = threading.Thread(target=fast_scan_loop, daemon=True)
+    fast_thread.start()
 
     while True:
         try:
@@ -37,7 +61,7 @@ def main() -> None:
                             opportunities_found += 1
                         continue
 
-                arb = arbitrage.find_internal_arb(market)
+                arb = arbitrage.find_internal_arb(market, quick_mode=False)
                 if arb:
                     logger.info(f"Internal arb: {market.ticker} - {arb['profit_pct']:.2f}% profit")
                     if executor.execute_arb(market, arb):

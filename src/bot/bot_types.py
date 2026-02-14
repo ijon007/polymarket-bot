@@ -1,6 +1,7 @@
 """Shared types for the bot (Market dataclass used by scanner, logic_filter, arbitrage)."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 
@@ -22,3 +23,4 @@ class Market:
     slug: Optional[str] = None
     depth_yes: float = 0.0  # order book depth in USD on YES side
     depth_no: float = 0.0   # order book depth in USD on NO side
+    end_date: Optional[datetime] = None  # market resolution/close time (UTC)

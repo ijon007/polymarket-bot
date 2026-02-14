@@ -4,23 +4,24 @@ import json
 import re
 from typing import Any, List, Optional
 
-from loguru import logger
+from src.bot.bot_types import Market
+from src.utils.logger import get_logger
+from src.utils.config import GROQ_API_KEY, MIN_EDGE_ARB_NORMAL, MIN_EDGE_ARB_QUICK
 
-from src.bot.types import Market
-from src.utils.config import GROQ_API_KEY
-
-MIN_PROFIT_INTERNAL = 0.03  # 3% minimum (total < 0.97)
+logger = get_logger()
 MIN_DEPTH_USD = 100.0
 MAX_SPREAD_INTERNAL = 0.05
 MIN_VOLUME_INTERNAL = 10000
+MIN_VOLUME_QUICK = 0  # relaxed for quick markets
 COMBO_SUM_THRESHOLD = 0.95  # sum of YES prices < 0.95 for arb
 
 
-def find_internal_arb(market: Any) -> Optional[dict]:
+def find_internal_arb(market: Any, quick_mode: bool = False) -> Optional[dict]:
     """
-    If yes_ask + no_ask < 0.97 (3% min profit), volume > 10k, spread < 5¢, depth >= $100 each side,
+    If yes_ask + no_ask below threshold (2% quick / 3% normal), volume/depth/spread checks pass,
     return arb dict; else None.
     """
+    threshold = 1.0 - (MIN_EDGE_ARB_QUICK if quick_mode else MIN_EDGE_ARB_NORMAL)
     best_yes = getattr(market, "best_yes_ask", None) or getattr(market, "yes_price", 0) or 0
     best_no = getattr(market, "best_no_ask", None) or getattr(market, "no_price", 0) or 0
     if best_yes > 1:
@@ -28,16 +29,19 @@ def find_internal_arb(market: Any) -> Optional[dict]:
     if best_no > 1:
         best_no = best_no / 100.0
     total_cost = best_yes + best_no
-    if total_cost >= 0.97:
+    if total_cost >= threshold:
         return None
-    if getattr(market, "volume_24h", 0) or 0 < MIN_VOLUME_INTERNAL:
+    vol = (getattr(market, "volume_24h", 0) or 0)
+    min_vol = MIN_VOLUME_QUICK if quick_mode else MIN_VOLUME_INTERNAL
+    if vol < min_vol:
         return None
     spread = getattr(market, "spread", 1.0) or 1.0
     if spread > MAX_SPREAD_INTERNAL:
         return None
     depth_yes = getattr(market, "depth_yes", 0) or 0
     depth_no = getattr(market, "depth_no", 0) or 0
-    if depth_yes < MIN_DEPTH_USD or depth_no < MIN_DEPTH_USD:
+    min_depth = (MIN_DEPTH_USD / 10.0) if quick_mode else MIN_DEPTH_USD  # relax depth for quick
+    if depth_yes < min_depth or depth_no < min_depth:
         return None
 
     profit = 1.00 - total_cost

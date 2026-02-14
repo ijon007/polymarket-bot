@@ -1,6 +1,7 @@
 """Central logging setup using loguru."""
 
 import sys
+
 from loguru import logger
 
 logger.remove()
