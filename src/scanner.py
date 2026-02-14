@@ -172,6 +172,7 @@ def fetch_btc_5min_market():
         "seconds_left": int(seconds_left),
         "slug": slug,
         "window_start_ts": window_ts,
+        "resolution_source": market.get("resolutionSource") or event.get("resolutionSource") or "",
       }
         
     except Exception as e:

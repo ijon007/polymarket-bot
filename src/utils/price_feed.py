@@ -48,22 +48,31 @@ def get_btc_price() -> Optional[float]:
 def get_btc_price_at_timestamp(ts: int) -> Optional[float]:
   """
   BTC price at a Unix timestamp (e.g. 5min window start).
-  Uses Binance 1m kline open so it matches resolution-style pricing.
+  Uses CoinGecko market_chart/range (no key needed).
   """
   if ts <= 0:
     return None
-  start_ms = (ts // 60) * 60 * 1000
-  try:
-    resp = requests.get(
-      "https://api.binance.com/api/v3/klines",
-      params={"symbol": "BTCUSDT", "interval": "1m", "startTime": start_ms, "limit": 1},
-      timeout=5,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    if not data or not data[0]:
-      return None
-    return float(data[0][1])
-  except Exception as e:
-    logger.debug(f"Historical BTC price at {ts}: {e}")
-    return None
+  # Request a short range; CoinGecko returns points, we use the first or closest.
+  from_ts = ts
+  to_ts = ts + 300
+  last_err = None
+  for attempt in range(3):
+    try:
+      resp = requests.get(
+        "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range",
+        params={"vs_currency": "usd", "from": from_ts, "to": to_ts},
+        timeout=10,
+      )
+      resp.raise_for_status()
+      data = resp.json()
+      prices = data.get("prices") or []
+      if not prices:
+        return None
+      # Use first point in range (closest to window start)
+      return float(prices[0][1])
+    except Exception as e:
+      last_err = e
+      if attempt < 2:
+        time.sleep(_RETRY_DELAY)
+  logger.debug(f"Historical BTC price at {ts}: {last_err}")
+  return None

@@ -32,16 +32,31 @@ class LastSecondStrategy(BaseStrategy):
 
     slug = market["slug"]
 
-    # Use official window start: BTC price at window_start_ts (from slug/API)
+    # Resolution source: log and optionally warn/skip when Polymarket uses different feed (e.g. Chainlink)
+    resolution_source = (market.get("resolution_source") or "").strip()
+    logger.info(f"Resolution source: {resolution_source or 'unknown'} | {slug}")
+    if resolution_source and "chain.link" in resolution_source.lower():
+      if self.config.get("require_resolution_source_match", False):
+        logger.info(f"Skipping trade: Polymarket resolves with Chainlink, we use CoinGecko (require_resolution_source_match=True)")
+        return None
+      logger.warning("Polymarket resolves with Chainlink; we use CoinGecko – feed mismatch may affect accuracy.")
+
+    # Prefer official window start: BTC price at window_start_ts (CoinGecko)
     start_price = None
+    start_source = None
     window_start_ts = market.get("window_start_ts")
     if window_start_ts is not None:
       start_price = get_btc_price_at_timestamp(window_start_ts)
+      if start_price is not None:
+        start_source = "timestamp"
     if start_price is None:
       start_price = market_tracker.get_start_price(slug)
+      if start_price is not None:
+        start_source = "first-seen"
     if start_price is None:
       logger.debug(f"No start price for {slug} (window_start_ts={window_start_ts})")
       return None
+    logger.info(f"Start price ({start_source}): ${start_price:,.2f} | {slug}")
 
     # Get current BTC price
     current_price = get_btc_price()
@@ -52,6 +67,16 @@ class LastSecondStrategy(BaseStrategy):
     # Calculate change
     price_change = current_price - start_price
     price_change_pct = (price_change / start_price) * 100
+
+    # Minimum move: skip if move is below threshold (avoids trading on noise)
+    min_pct = self.config.get("min_move_pct", 0.0)
+    min_dollars = self.config.get("min_move_dollars", 0.0)
+    if min_pct > 0 and abs(price_change_pct) < min_pct:
+      logger.debug(f"Move {price_change_pct:+.2f}% below min_move_pct {min_pct}% | {slug}")
+      return None
+    if min_dollars > 0 and abs(price_change) < min_dollars:
+      logger.debug(f"Move ${abs(price_change):.2f} below min_move_dollars ${min_dollars} | {slug}")
+      return None
 
     # Determine winner
     if current_price >= start_price:
