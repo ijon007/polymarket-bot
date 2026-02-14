@@ -4,7 +4,8 @@ from loguru import logger
 from src.config import SCAN_INTERVAL, STRATEGIES, STRATEGY_PRIORITY
 from src.scanner import fetch_btc_5min_market
 from src.executor import execute_trade
-from src.database import init_db, validate_db_schema
+from src.database import init_db, validate_db_schema, has_open_trade_for_market
+from src.settlement import settle_trades
 
 # Import all strategies
 from src.strategies.mean_reversion import MeanReversionStrategy
@@ -71,22 +72,30 @@ def main():
           logger.info(f"Strategy '{strategy_name}' triggered!")
           break
 
-      # Execute if signal found
+      # Execute if signal found (only one trade per market)
       if signal:
-        opportunities_found += 1
-        success = execute_trade(market, signal)
-        if success:
-          logger.success(f"Trade executed! Total opportunities: {opportunities_found}")
+        slug = market.get("slug") or market.get("question") or ""
+        if has_open_trade_for_market(slug):
+          logger.debug(f"Skip trade: already have open position on {slug}")
+        else:
+          opportunities_found += 1
+          success = execute_trade(market, signal)
+          if success:
+            logger.success(f"Trade executed! Total opportunities: {opportunities_found}")
       else:
         logger.debug(
           f"No opportunities: {market['slug']} | "
           f"YES: {market['yes_price']:.3f}, NO: {market['no_price']:.3f}"
         )
 
+      settle_trades()
+
       time.sleep(SCAN_INTERVAL)
 
     except KeyboardInterrupt:
       logger.info("\nShutting down bot...")
+      logger.info("Running final settlement check...")
+      settle_trades()
       break
     except Exception as e:
       logger.error(f"Error in main loop: {e}")

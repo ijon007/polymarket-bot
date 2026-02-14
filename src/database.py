@@ -33,6 +33,9 @@ def _migrate_schema():
         ALTER TABLE trades ADD COLUMN IF NOT EXISTS reason VARCHAR;
         ALTER TABLE trades ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP;
         ALTER TABLE trades ADD COLUMN IF NOT EXISTS status VARCHAR;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS market_outcome VARCHAR;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS actual_profit FLOAT;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS settled_at TIMESTAMP;
       """))
       conn.commit()
     logger.info("Schema migration completed")
@@ -60,6 +63,21 @@ class Trade(Base):
   reason = Column(String)
   executed_at = Column(DateTime)
   status = Column(String)
+  market_outcome = Column(String, nullable=True)  # YES or NO when settled
+  actual_profit = Column(Float, nullable=True)  # Realized P&L
+  settled_at = Column(DateTime, nullable=True)
+
+
+class MarketOutcome(Base):
+  __tablename__ = "market_outcomes"
+
+  id = Column(Integer, primary_key=True, autoincrement=True)
+  slug = Column(String, unique=True)
+  condition_id = Column(String)
+  outcome = Column(String)  # YES or NO
+  resolved_at = Column(DateTime)
+  btc_start_price = Column(Float, nullable=True)
+  btc_end_price = Column(Float, nullable=True)
 
 
 def init_db():
@@ -158,6 +176,27 @@ def _sanitize_trade_data(data):
       elif key == "executed_at":
         out[key] = datetime.utcnow()
   return out
+
+
+def has_open_trade_for_market(slug: str) -> bool:
+  """True if we already have an unsettled (paper) trade on this market."""
+  if not Session or not slug:
+    return False
+  session = None
+  try:
+    session = Session()
+    return session.query(Trade).filter(
+      Trade.market_ticker == slug,
+      Trade.status == "paper"
+    ).limit(1).first() is not None
+  except Exception:
+    return False
+  finally:
+    if session:
+      try:
+        session.close()
+      except Exception:
+        pass
 
 
 def log_trade(trade_data):

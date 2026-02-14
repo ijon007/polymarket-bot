@@ -1,5 +1,5 @@
 from src.strategies.base import BaseStrategy
-from src.utils.price_feed import get_btc_price
+from src.utils.price_feed import get_btc_price, get_btc_price_at_timestamp
 from src.utils.market_tracker import market_tracker
 from typing import Optional, Dict
 from loguru import logger
@@ -32,10 +32,15 @@ class LastSecondStrategy(BaseStrategy):
 
     slug = market["slug"]
 
-    # Get market start price
-    start_price = market_tracker.get_start_price(slug)
+    # Use official window start: BTC price at window_start_ts (from slug/API)
+    start_price = None
+    window_start_ts = market.get("window_start_ts")
+    if window_start_ts is not None:
+      start_price = get_btc_price_at_timestamp(window_start_ts)
     if start_price is None:
-      logger.debug(f"No start price recorded for {slug}")
+      start_price = market_tracker.get_start_price(slug)
+    if start_price is None:
+      logger.debug(f"No start price for {slug} (window_start_ts={window_start_ts})")
       return None
 
     # Get current BTC price

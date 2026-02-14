@@ -1,9 +1,12 @@
 import json
+import time
 import requests
 from datetime import datetime, timezone, timedelta
 from loguru import logger
 
 GAMMA_API = "https://gamma-api.polymarket.com"
+_REQUEST_RETRIES = 3
+_REQUEST_RETRY_DELAY = 2
 
 
 def _parse_market_result(market, slug):
@@ -62,7 +65,19 @@ def fetch_btc_5min_market():
     slug = f"btc-updown-5m-{window_ts}"
     
     try:
-      resp = requests.get(f"{GAMMA_API}/events", params={"slug": slug}, timeout=10)
+      last_err = None
+      for attempt in range(_REQUEST_RETRIES):
+        try:
+          resp = requests.get(f"{GAMMA_API}/events", params={"slug": slug}, timeout=10)
+          break
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, OSError) as e:
+          last_err = e
+          if attempt < _REQUEST_RETRIES - 1:
+            time.sleep(_REQUEST_RETRY_DELAY)
+          continue
+      else:
+        logger.warning(f"Network error for {slug} after {_REQUEST_RETRIES} tries: {last_err}")
+        continue
       if resp.status_code != 200:
         continue
       
@@ -137,16 +152,14 @@ def fetch_btc_5min_market():
       
       logger.info(f"✅ ACTIVE: {slug} | YES: {yes_price}, NO: {no_price} | {seconds_left:.0f}s left")
 
-      # Register market in tracker for last-second strategy
+      # Fallback: register start price when first seen (used if historical at window_start_ts unavailable)
       from src.utils.market_tracker import market_tracker
       from src.utils.price_feed import get_btc_price
-
       if market_tracker.get_start_price(slug) is None:
         btc_price = get_btc_price()
         if btc_price:
           start_time = end_date - timedelta(minutes=5)
           market_tracker.register_market(slug, start_time, btc_price)
-
       market_tracker.cleanup_old_markets()
 
       return {
@@ -157,7 +170,8 @@ def fetch_btc_5min_market():
         "end_date": end_date,
         "tokens": token_ids,
         "seconds_left": int(seconds_left),
-        "slug": slug
+        "slug": slug,
+        "window_start_ts": window_ts,
       }
         
     except Exception as e:
