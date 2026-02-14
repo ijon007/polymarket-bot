@@ -18,21 +18,21 @@ SCAN_INTERVAL = 10  # seconds
 # Toggle strategies on/off and configure parameters
 STRATEGIES = {
   "mean_reversion": {
-    "enabled": True,
+    "enabled": False,
     "overpriced_threshold": 0.60,  # Consider overpriced above 60¢
     "min_edge": 0.08,  # 8% minimum edge
     "position_size": DEFAULT_POSITION_SIZE
   },
   "momentum": {
-    "enabled": False,  # Disabled until Chainlink integration
+    "enabled": True,
     "lookback_seconds": 60,
-    "min_move_pct": 0.001,  # 0.1% move
+    "min_move_pct": 0.002,  # 0.2% minimum move
     "position_size": DEFAULT_POSITION_SIZE
   },
   "last_second": {
-    "enabled": False,  # Disabled until Chainlink integration
+    "enabled": False,
     "trigger_seconds": 30,
-    "position_size": DEFAULT_POSITION_SIZE * 2  # Higher size for near-certain bets
+    "position_size": DEFAULT_POSITION_SIZE * 2  # Larger size (high confidence)
   },
   "spread_capture": {
     "enabled": False,  # Disabled (requires limit order infrastructure)
@@ -43,8 +43,8 @@ STRATEGIES = {
 
 # Priority order (if multiple strategies trigger, use highest priority)
 STRATEGY_PRIORITY = [
-  "last_second",    # High (near-certain)
-  "mean_reversion", # Medium
-  "momentum",       # Medium
-  "spread_capture"  # Lowest
+  "momentum",
+  "last_second",
+  "mean_reversion",
+  "spread_capture"
 ]

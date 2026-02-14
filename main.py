@@ -6,7 +6,6 @@ from src.executor import execute_trade
 from src.database import init_db
 
 # Import all strategies
-from src.strategies.arbitrage import ArbitrageStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.strategies.last_second import LastSecondStrategy
@@ -22,9 +21,6 @@ def main():
 
     # Initialize strategies
     strategy_instances = {}
-
-    if STRATEGIES["arbitrage"]["enabled"]:
-        strategy_instances["arbitrage"] = ArbitrageStrategy(STRATEGIES["arbitrage"])
 
     if STRATEGIES["mean_reversion"]["enabled"]:
         strategy_instances["mean_reversion"] = MeanReversionStrategy(STRATEGIES["mean_reversion"])
