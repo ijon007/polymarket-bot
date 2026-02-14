@@ -1,10 +1,14 @@
 """
 Settlement: check resolved markets and calculate realized P&L for trades.
+Uses RTDS (Chainlink) when available to settle as soon as the 5min window ends.
 """
+import re
 import time
 from datetime import datetime, timezone
 import requests
 from loguru import logger
+
+from typing import Optional, Tuple
 
 from src.database import Session, Trade, MarketOutcome
 
@@ -12,6 +16,45 @@ GAMMA_API = "https://gamma-api.polymarket.com"
 _RESOLUTION_RETRIES = 3
 _RESOLUTION_RETRY_DELAY = 2
 _WINNER_THRESHOLD = 0.98  # treat as resolved when winning side >= this
+_RTDS_SETTLE_BUFFER_SEC = 2  # seconds after window end before we resolve via RTDS (allow tick to arrive)
+
+
+def _parse_btc_5m_slug(slug: str) -> Tuple[Optional[int], Optional[int]]:
+  """Parse btc-updown-5m-{window_start_ts}. Returns (window_start_ts, window_end_ts) or (None, None)."""
+  m = re.match(r"btc-updown-5m-(\d+)$", slug or "")
+  if not m:
+    return None, None
+  start_ts = int(m.group(1))
+  return start_ts, start_ts + 300
+
+
+def resolve_outcome_via_rtds(slug: str) -> dict:
+  """
+  Resolve 5min BTC market outcome using RTDS (Chainlink) buffer.
+  Use as soon as window end time has passed so we don't wait for Polymarket API.
+  Returns dict with resolved: bool, outcome: "YES"|"NO" (if resolved).
+  """
+  window_start_ts, window_end_ts = _parse_btc_5m_slug(slug)
+  if window_start_ts is None or window_end_ts is None:
+    return {"resolved": False}
+  now = time.time()
+  if now < window_end_ts + _RTDS_SETTLE_BUFFER_SEC:
+    return {"resolved": False}
+  try:
+    from src.config import USE_RTDS
+    if not USE_RTDS:
+      return {"resolved": False}
+    from src.utils.rtds_client import get_btc_at_timestamp
+    start_price = get_btc_at_timestamp(window_start_ts)
+    end_price = get_btc_at_timestamp(window_end_ts)
+    if start_price is None or end_price is None:
+      return {"resolved": False}
+    outcome = "YES" if end_price >= start_price else "NO"
+    logger.info(f"Market {slug} resolved via RTDS: {outcome} (start=${start_price:,.2f} end=${end_price:,.2f})")
+    return {"resolved": True, "outcome": outcome}
+  except Exception as e:
+    logger.debug(f"RTDS resolution for {slug}: {e}")
+    return {"resolved": False}
 
 
 def check_market_resolution(slug: str) -> dict:
@@ -142,8 +185,15 @@ def settle_trades():
 
     slugs = set(t.market_ticker for t in unsettled if t.market_ticker and t.market_ticker != "unknown")
 
+    try:
+      from src.config import USE_RTDS
+    except Exception:
+      USE_RTDS = False
+
     for slug in slugs:
-      resolution = check_market_resolution(slug)
+      resolution = resolve_outcome_via_rtds(slug) if USE_RTDS else {"resolved": False}
+      if not resolution["resolved"]:
+        resolution = check_market_resolution(slug)
       if not resolution["resolved"]:
         continue
 
