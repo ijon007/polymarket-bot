@@ -10,40 +10,43 @@ Session = sessionmaker(bind=engine) if engine else None
 
 
 class Trade(Base):
-  __tablename__ = "trades"
+    __tablename__ = "trades"
 
-  id = Column(Integer, primary_key=True, autoincrement=True)
-  condition_id = Column(String)
-  question = Column(String)
-  yes_price = Column(Float)
-  no_price = Column(Float)
-  total_cost = Column(Float)
-  position_size = Column(Float)
-  expected_profit = Column(Float)
-  profit_pct = Column(Float)
-  executed_at = Column(DateTime)
-  status = Column(String)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    condition_id = Column(String)
+    question = Column(String)
+    strategy = Column(String)  # which strategy triggered
+    action = Column(String)  # YES, NO, or ARBITRAGE
+    price = Column(Float, nullable=True)  # For directional bets
+    yes_price = Column(Float, nullable=True)  # For arbitrage
+    no_price = Column(Float, nullable=True)  # For arbitrage
+    position_size = Column(Float)
+    expected_profit = Column(Float)
+    confidence = Column(Float)
+    reason = Column(String)
+    executed_at = Column(DateTime)
+    status = Column(String)
 
 
 def init_db():
-  """Create tables if they don't exist"""
-  if not engine:
-    logger.warning("DATABASE_URL not set - skipping database init")
-    return
-  Base.metadata.create_all(engine)
-  logger.info("Database initialized")
+    """Create tables if they don't exist"""
+    if not engine:
+        logger.warning("DATABASE_URL not set - skipping database init")
+        return
+    Base.metadata.create_all(engine)
+    logger.info("Database initialized")
 
 
 def log_trade(trade_data):
-  """Save trade to database"""
-  if not Session:
-    logger.warning("Database not configured - trade not logged")
-    return
-  try:
-    session = Session()
-    trade = Trade(**trade_data)
-    session.add(trade)
-    session.commit()
-    session.close()
-  except Exception as e:
-    logger.error(f"Error logging trade: {e}")
+    """Save trade to database"""
+    if not Session:
+        logger.warning("Database not configured - trade not logged")
+        return
+    try:
+        session = Session()
+        trade = Trade(**trade_data)
+        session.add(trade)
+        session.commit()
+        session.close()
+    except Exception as e:
+        logger.error(f"Error logging trade: {e}")
