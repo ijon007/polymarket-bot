@@ -1,0 +1,13 @@
+py-clob-client
+psycopg2-binary
+sqlalchemy
+groq
+tweepy
+praw
+pandas
+numpy
+scikit-learn
+python-dotenv
+loguru
+requests
+pytest
