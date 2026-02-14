@@ -4,3 +4,4 @@ sqlalchemy
 python-dotenv
 loguru
 requests
+websocket-client

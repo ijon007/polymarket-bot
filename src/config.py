@@ -14,6 +14,9 @@ DEFAULT_POSITION_SIZE = 100.0  # $100 per trade
 # Bot behavior
 SCAN_INTERVAL = 10  # seconds
 
+# Price feed: use Polymarket RTDS (Chainlink) for current BTC when available
+USE_RTDS = os.getenv("USE_RTDS", "true").lower() in ("true", "1", "yes")
+
 # STRATEGY CONFIGURATION
 # Toggle strategies on/off and configure parameters
 STRATEGIES = {

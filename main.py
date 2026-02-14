@@ -1,7 +1,7 @@
 import sys
 import time
 from loguru import logger
-from src.config import SCAN_INTERVAL, STRATEGIES, STRATEGY_PRIORITY
+from src.config import SCAN_INTERVAL, STRATEGIES, STRATEGY_PRIORITY, USE_RTDS
 from src.scanner import fetch_btc_5min_market
 from src.executor import execute_trade
 from src.database import init_db, validate_db_schema, has_open_trade_for_market
@@ -46,6 +46,10 @@ def main():
   for name in strategy_instances:
     logger.info(f"  ✓ {name}")
   logger.info("=" * 60)
+
+  if USE_RTDS:
+    from src.utils.rtds_client import start as rtds_start
+    rtds_start()
 
   opportunities_found = 0
 
@@ -94,6 +98,9 @@ def main():
 
     except KeyboardInterrupt:
       logger.info("\nShutting down bot...")
+      if USE_RTDS:
+        from src.utils.rtds_client import stop as rtds_stop
+        rtds_stop()
       logger.info("Running final settlement check...")
       settle_trades()
       break

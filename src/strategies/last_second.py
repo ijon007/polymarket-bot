@@ -1,6 +1,7 @@
 from src.strategies.base import BaseStrategy
-from src.utils.price_feed import get_btc_price, get_btc_price_at_timestamp
+from src.utils.price_feed import get_btc_price, get_btc_price_at_timestamp, get_btc_price_source
 from src.utils.market_tracker import market_tracker
+from src.config import USE_RTDS
 from typing import Optional, Dict
 from loguru import logger
 
@@ -32,16 +33,22 @@ class LastSecondStrategy(BaseStrategy):
 
     slug = market["slug"]
 
-    # Resolution source: log and optionally warn/skip when Polymarket uses different feed (e.g. Chainlink)
+    # Resolution source: log and optionally warn/skip when Polymarket uses different feed
     resolution_source = (market.get("resolution_source") or "").strip()
-    logger.info(f"Resolution source: {resolution_source or 'unknown'} | {slug}")
+    price_source = get_btc_price_source()
     if resolution_source and "chain.link" in resolution_source.lower():
-      if self.config.get("require_resolution_source_match", False):
-        logger.info(f"Skipping trade: Polymarket resolves with Chainlink, we use CoinGecko (require_resolution_source_match=True)")
-        return None
-      logger.warning("Polymarket resolves with Chainlink; we use CoinGecko – feed mismatch may affect accuracy.")
+      if price_source == "rtds":
+        logger.info(f"Resolution source: Chainlink (we use RTDS Chainlink) | {slug}")
+      else:
+        logger.info(f"Resolution source: {resolution_source} | {slug}")
+        if self.config.get("require_resolution_source_match", False):
+          logger.info(f"Skipping trade: Polymarket resolves with Chainlink, we use CoinGecko (require_resolution_source_match=True)")
+          return None
+        logger.warning("Polymarket resolves with Chainlink; we use CoinGecko – feed mismatch may affect accuracy.")
+    else:
+      logger.info(f"Resolution source: {resolution_source or 'unknown'} | {slug}")
 
-    # Prefer official window start: BTC price at window_start_ts (CoinGecko)
+    # Start price: RTDS buffer (when USE_RTDS) or window_start_ts + first-seen fallback
     start_price = None
     start_source = None
     window_start_ts = market.get("window_start_ts")
@@ -49,12 +56,15 @@ class LastSecondStrategy(BaseStrategy):
       start_price = get_btc_price_at_timestamp(window_start_ts)
       if start_price is not None:
         start_source = "timestamp"
-    if start_price is None:
+    if start_price is None and not USE_RTDS:
       start_price = market_tracker.get_start_price(slug)
       if start_price is not None:
         start_source = "first-seen"
     if start_price is None:
-      logger.debug(f"No start price for {slug} (window_start_ts={window_start_ts})")
+      if USE_RTDS and window_start_ts is not None:
+        logger.debug(f"No RTDS start price for {slug} (joined mid-window, skipping this window)")
+      else:
+        logger.debug(f"No start price for {slug} (window_start_ts={window_start_ts})")
       return None
     logger.info(f"Start price ({start_source}): ${start_price:,.2f} | {slug}")
 
