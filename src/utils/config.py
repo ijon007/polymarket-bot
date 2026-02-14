@@ -1,12 +1,31 @@
-"""Load and expose environment variables."""
+"""Load and expose environment variables and trading thresholds."""
 
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# API Keys
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 POLYMARKET_PRIVATE_KEY = os.getenv("POLYMARKET_PRIVATE_KEY", "")
-BANKROLL = float(os.getenv("BANKROLL", "1000"))
+
+# Trading config
 PAPER_MODE = os.getenv("PAPER_MODE", "True").lower() in ("true", "1", "yes")
+BANKROLL = float(os.getenv("BANKROLL", "1000"))
+
+# Thresholds
+MIN_LIQUIDITY = int(os.getenv("MIN_LIQUIDITY", "10000"))
+MIN_EDGE_LOGIC = float(os.getenv("MIN_EDGE_LOGIC", "0.10"))
+MIN_EDGE_ARB = float(os.getenv("MIN_EDGE_ARB", "0.03"))
+MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "0.05"))
+MAX_POSITION_SIZE_LOGIC = float(os.getenv("MAX_POSITION_SIZE_LOGIC", "0.10"))
+MAX_POSITION_SIZE_ARB = float(os.getenv("MAX_POSITION_SIZE_ARB", "0.15"))
+MAX_TOTAL_EXPOSURE = float(os.getenv("MAX_TOTAL_EXPOSURE", "0.40"))
+MAX_CATEGORY_EXPOSURE = float(os.getenv("MAX_CATEGORY_EXPOSURE", "0.15"))
+MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", "10"))
+
+# Bot behavior
+SCAN_INTERVAL = int(os.getenv("SCAN_INTERVAL", "5"))
+STOP_LOSS = float(os.getenv("STOP_LOSS", "-0.25"))
+TAKE_PROFIT = float(os.getenv("TAKE_PROFIT", "0.50"))
