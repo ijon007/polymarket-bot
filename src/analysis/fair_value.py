@@ -1,6 +1,6 @@
-"""Fair value computation (base rate + ML + consensus)."""
+"""Fair value from base rate and consensus."""
 
 
-def compute_fair_value():
-    """Compute fair value from base rate, ML model, and consensus inputs."""
+def calculate_fair_value():
+    """Calculate fair value (base rate + consensus)."""
     ...

@@ -1,1 +1,1 @@
-"""Analysis package."""
+"""Analysis: fair value and base rates."""

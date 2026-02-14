@@ -1,8 +1,8 @@
-"""Main bot loop entrypoint."""
+"""Main bot loop."""
 
 
-def run() -> None:
-    """Main bot loop: scan, filter, arbitrage, value bets, execute."""
+def run():
+    """Main bot loop."""
     ...
 
 

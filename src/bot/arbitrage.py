@@ -2,10 +2,10 @@
 
 
 def detect_internal_arb():
-    """Detect internal arbitrage within a single market (yes + no mispricing)."""
+    """Detect internal arbitrage opportunities."""
     ...
 
 
 def detect_combinatorial_arb():
-    """Detect combinatorial arbitrage across related markets."""
+    """Detect combinatorial arbitrage opportunities."""
     ...

@@ -2,5 +2,5 @@
 
 
 def scan_markets():
-    """Fetch and return candidate markets for analysis."""
+    """Market scanning."""
     ...

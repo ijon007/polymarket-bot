@@ -1,1 +1,1 @@
-"""Risk package."""
+"""Risk: position sizing and limits."""

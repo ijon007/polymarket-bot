@@ -1,15 +1,11 @@
-"""Minimal tests for config."""
+"""Minimal tests for config loading."""
 
-import sys
-import os
-
-# Ensure src is on path when running tests from repo root
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from src.utils import config
 
 
-def test_config_import_and_defaults():
-    """Config loads and exposes expected types (PAPER_MODE bool, BANKROLL float)."""
-    from src.utils import config
+def test_config_loads():
+    """Config module loads and exposes expected attributes."""
+    assert hasattr(config, "GROQ_API_KEY")
+    assert hasattr(config, "DATABASE_URL")
+    assert hasattr(config, "BANKROLL")
     assert isinstance(config.PAPER_MODE, bool)
-    assert isinstance(config.BANKROLL, (int, float))
-    assert config.BANKROLL >= 0

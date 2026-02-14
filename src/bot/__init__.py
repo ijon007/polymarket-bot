@@ -1,1 +1,1 @@
-"""Bot package."""
+"""Bot loop, scanner, executor, and trade logic."""

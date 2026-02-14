@@ -1,1 +1,1 @@
-"""Polymarket bot source package."""
+"""Polymarket trading bot package."""

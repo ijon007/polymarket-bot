@@ -1,1 +1,1 @@
-"""Data package."""
+"""Data layer: database and models."""
