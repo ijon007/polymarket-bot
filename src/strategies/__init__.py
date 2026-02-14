@@ -6,10 +6,10 @@ from src.strategies.last_second import LastSecondStrategy
 from src.strategies.spread_capture import SpreadCaptureStrategy
 
 __all__ = [
-    "BaseStrategy",
-    "ArbitrageStrategy",
-    "MeanReversionStrategy",
-    "MomentumStrategy",
-    "LastSecondStrategy",
-    "SpreadCaptureStrategy",
+  "BaseStrategy",
+  "ArbitrageStrategy",
+  "MeanReversionStrategy",
+  "MomentumStrategy",
+  "LastSecondStrategy",
+  "SpreadCaptureStrategy",
 ]

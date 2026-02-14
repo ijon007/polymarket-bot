@@ -24,13 +24,13 @@ STRATEGIES = {
     "position_size": DEFAULT_POSITION_SIZE
   },
   "momentum": {
-    "enabled": True,
+    "enabled": False,
     "lookback_seconds": 60,
     "min_move_pct": 0.002,  # 0.2% minimum move
     "position_size": DEFAULT_POSITION_SIZE
   },
   "last_second": {
-    "enabled": False,
+    "enabled": True,
     "trigger_seconds": 30,
     "position_size": DEFAULT_POSITION_SIZE * 2  # Larger size (high confidence)
   },
@@ -43,8 +43,8 @@ STRATEGIES = {
 
 # Priority order (if multiple strategies trigger, use highest priority)
 STRATEGY_PRIORITY = [
-  "momentum",
   "last_second",
+  "momentum",
   "mean_reversion",
   "spread_capture"
 ]

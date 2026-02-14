@@ -1,3 +1,4 @@
+from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Float, DateTime, Integer, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -10,71 +11,175 @@ Session = sessionmaker(bind=engine) if engine else None
 
 
 def _migrate_schema():
-    """Add missing columns to existing trades table (schema migration)."""
-    if not engine:
-        return
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("""
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS condition_id VARCHAR;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS question VARCHAR;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS strategy VARCHAR;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS action VARCHAR;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS price FLOAT;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS yes_price FLOAT;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS no_price FLOAT;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS position_size FLOAT;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS expected_profit FLOAT;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS confidence FLOAT;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS reason VARCHAR;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP;
-                ALTER TABLE trades ADD COLUMN IF NOT EXISTS status VARCHAR;
-            """))
-            conn.commit()
-        logger.info("Schema migration completed")
-    except Exception as e:
-        logger.warning(f"Schema migration: {e}")
+  """Add missing columns to existing trades table (schema migration)."""
+  if not engine:
+    return
+  try:
+    with engine.connect() as conn:
+      conn.execute(text("""
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS market_ticker VARCHAR;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS condition_id VARCHAR;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS question VARCHAR;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS strategy VARCHAR;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS action VARCHAR;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS side VARCHAR;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS price FLOAT;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS yes_price FLOAT;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS no_price FLOAT;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS position_size FLOAT;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS size FLOAT;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS expected_profit FLOAT;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS confidence FLOAT;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS reason VARCHAR;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP;
+        ALTER TABLE trades ADD COLUMN IF NOT EXISTS status VARCHAR;
+      """))
+      conn.commit()
+    logger.info("Schema migration completed")
+  except Exception as e:
+    logger.warning(f"Schema migration: {e}")
 
 
 class Trade(Base):
-    __tablename__ = "trades"
+  __tablename__ = "trades"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    condition_id = Column(String)
-    question = Column(String)
-    strategy = Column(String)  # which strategy triggered
-    action = Column(String)  # YES, NO, or ARBITRAGE
-    price = Column(Float, nullable=True)  # For directional bets
-    yes_price = Column(Float, nullable=True)  # For arbitrage
-    no_price = Column(Float, nullable=True)  # For arbitrage
-    position_size = Column(Float)
-    expected_profit = Column(Float)
-    confidence = Column(Float)
-    reason = Column(String)
-    executed_at = Column(DateTime)
-    status = Column(String)
+  id = Column(Integer, primary_key=True, autoincrement=True)
+  market_ticker = Column(String, nullable=False)  # e.g. btc-updown-5m-1771083600
+  condition_id = Column(String)
+  question = Column(String)
+  strategy = Column(String)  # which strategy triggered
+  action = Column(String)  # YES, NO, or ARBITRAGE
+  side = Column(String, nullable=False)  # YES, NO, or ARBITRAGE (DB requires this)
+  price = Column(Float, nullable=True)  # For directional bets
+  yes_price = Column(Float, nullable=True)  # For arbitrage
+  no_price = Column(Float, nullable=True)  # For arbitrage
+  position_size = Column(Float)
+  size = Column(Float, nullable=False)  # DB column (same as position_size)
+  expected_profit = Column(Float)
+  confidence = Column(Float)
+  reason = Column(String)
+  executed_at = Column(DateTime)
+  status = Column(String)
 
 
 def init_db():
-    """Create tables if they don't exist"""
-    if not engine:
-        logger.warning("DATABASE_URL not set - skipping database init")
-        return
-    Base.metadata.create_all(engine)
-    _migrate_schema()
-    logger.info("Database initialized")
+  """Create tables if they don't exist"""
+  if not engine:
+    logger.warning("DATABASE_URL not set - skipping database init")
+    return
+  Base.metadata.create_all(engine)
+  _migrate_schema()
+  logger.info("Database initialized")
+
+
+def _dummy_trade_payload():
+  """Same shape as executor sends (directional bet). Used for dry-run insert."""
+  return {
+    "market_ticker": "test-dry-run",
+    "condition_id": "0x00",
+    "question": "test",
+    "strategy": "test",
+    "action": "YES",
+    "side": "YES",
+    "price": 0.5,
+    "yes_price": 0.5,
+    "no_price": 0.5,
+    "position_size": 0.0,
+    "size": 0.0,
+    "expected_profit": 0.0,
+    "confidence": 0.0,
+    "reason": "DB schema check",
+    "executed_at": datetime.utcnow(),
+    "status": "paper",
+  }
+
+
+def validate_db_schema():
+  """
+  Run before trading: do a dry-run INSERT then ROLLBACK.
+  Raises if the trades table has NOT NULL columns we don't fill.
+  Call this after init_db() and exit if it fails.
+  """
+  if not Session:
+    return
+  session = None
+  try:
+    safe = _sanitize_trade_data(_dummy_trade_payload())
+    allowed = {c.key for c in Trade.__table__.columns if c.key != "id"}
+    payload = {k: safe[k] for k in allowed if k in safe}
+    session = Session()
+    trade = Trade(**payload)
+    session.add(trade)
+    session.flush()
+    session.rollback()
+    logger.info("DB schema check passed: trades table is compatible")
+  except Exception as e:
+    if session:
+      try:
+        session.rollback()
+      except Exception:
+        pass
+      try:
+        session.close()
+      except Exception:
+        pass
+    raise RuntimeError(
+      f"Database schema check FAILED. Fix before trading.\n"
+      f"Error: {e}\n"
+      f"Your 'trades' table may have NOT NULL columns missing from the app. "
+      f"Run: python scripts/check_db.py"
+    ) from e
+  finally:
+    if session:
+      try:
+        session.close()
+      except Exception:
+        pass
+
+
+# Columns that must not be None for INSERT (match typical NOT NULL constraints)
+_REQUIRED_KEYS = (
+  "market_ticker", "condition_id", "question", "strategy", "action", "side",
+  "position_size", "size", "expected_profit", "confidence", "reason", "executed_at", "status"
+)
+
+
+def _sanitize_trade_data(data):
+  """Ensure all required fields have non-null values to avoid NOT NULL violations."""
+  out = dict(data)
+  if not (out.get("market_ticker") or "").strip():
+    out["market_ticker"] = out.get("question") or out.get("condition_id") or "unknown"
+  for key in _REQUIRED_KEYS:
+    if key in out and out[key] is None:
+      if key in ("condition_id", "question", "strategy", "action", "side", "reason", "status"):
+        out[key] = ""
+      elif key in ("position_size", "size", "expected_profit", "confidence"):
+        out[key] = 0.0
+      elif key == "executed_at":
+        out[key] = datetime.utcnow()
+  return out
 
 
 def log_trade(trade_data):
-    """Save trade to database"""
-    if not Session:
-        logger.warning("Database not configured - trade not logged")
-        return
-    try:
-        session = Session()
-        trade = Trade(**trade_data)
-        session.add(trade)
-        session.commit()
+  """Save trade to database. Never raises - logging is best-effort so execution is never blocked."""
+  if not Session:
+    logger.warning("Database not configured - trade not logged")
+    return
+  session = None
+  try:
+    safe = _sanitize_trade_data(trade_data)
+    # Only pass keys that exist on Trade model
+    allowed = {c.key for c in Trade.__table__.columns if c.key != "id"}
+    payload = {k: safe[k] for k in allowed if k in safe}
+    session = Session()
+    trade = Trade(**payload)
+    session.add(trade)
+    session.commit()
+  except Exception as e:
+    logger.error(f"Error logging trade: {e}")
+  finally:
+    if session:
+      try:
         session.close()
-    except Exception as e:
-        logger.error(f"Error logging trade: {e}")
+      except Exception:
+        pass
