@@ -1,0 +1,19 @@
+{
+  "name": "polymarket-bot",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "convex:dev": "convex dev",
+    "convex:deploy": "convex deploy",
+    "dashboard:dev": "bun run --filter dashboard dev",
+    "bot:start": "bun run --filter bot start",
+    "bot:check-db": "bun run --filter bot check-db",
+    "bot:init-db": "bun run --filter bot init-db",
+    "bot:pnl-summary": "bun run --filter bot pnl-summary",
+    "bot:settle-now": "bun run --filter bot settle-now"
+  },
+  "devDependencies": {
+    "convex": "^1.18.0"
+  }
+}

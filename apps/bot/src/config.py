@@ -1,10 +1,11 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(".env.local")
 
-# Database
-DATABASE_URL = os.getenv('DATABASE_URL')
+# Database (Convex replaces Neon)
+CONVEX_URL = os.getenv("CONVEX_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")  # legacy, unused when CONVEX_URL set
 
 # Trading
 PAPER_MODE = True

@@ -10,9 +10,13 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loguru import logger
-from src.database import init_db, validate_db_schema
+from src.database import init_db, validate_db_schema, is_db_configured
+
 
 def main():
+  if not is_db_configured():
+    logger.error("CONVEX_URL not set. Set CONVEX_URL in .env.local and run npx convex dev.")
+    return 1
   logger.info("Checking database schema...")
   init_db()
   try:
@@ -25,6 +29,7 @@ def main():
   except Exception as e:
     logger.error(f"DB check failed: {e}")
     return 1
+
 
 if __name__ == "__main__":
   sys.exit(main())

@@ -1,6 +1,5 @@
 py-clob-client
-psycopg2-binary
-sqlalchemy
+convex
 python-dotenv
 loguru
 requests

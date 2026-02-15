@@ -4,7 +4,7 @@ from loguru import logger
 from src.config import SCAN_INTERVAL, STRATEGIES, STRATEGY_PRIORITY
 from src.scanner import fetch_btc_5min_market
 from src.executor import execute_trade
-from src.database import init_db, validate_db_schema, has_open_trade_for_market, Session
+from src.database import init_db, validate_db_schema, has_open_trade_for_market, is_db_configured
 from src.settlement import settle_trades
 from src.utils.balance import get_current_balance
 
@@ -25,10 +25,10 @@ def main():
     logger.error(str(e))
     sys.exit(1)
 
-  if not Session:
+  if not is_db_configured():
     logger.error(
-      "DATABASE_URL is not set - trades will NOT be saved to the database. "
-      "Set DATABASE_URL in .env (e.g. postgresql://user:pass@host/dbname) and restart."
+      "CONVEX_URL is not set - trades will NOT be saved to the database. "
+      "Set CONVEX_URL in .env.local and restart."
     )
 
   # Initialize strategies

@@ -8,9 +8,15 @@ from datetime import datetime, timezone
 import requests
 from loguru import logger
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any
 
-from src.database import Session, Trade, MarketOutcome
+from src.database import (
+  is_db_configured,
+  list_unsettled_trades,
+  get_market_outcome_by_slug,
+  insert_market_outcome,
+  update_trade_settlement,
+)
 
 GAMMA_API = "https://gamma-api.polymarket.com"
 _RESOLUTION_RETRIES = 3
@@ -125,26 +131,27 @@ def check_market_resolution(slug: str) -> dict:
   return {"resolved": False}
 
 
-def calculate_trade_pnl(trade: Trade, market_outcome: str) -> float:
+def calculate_trade_pnl(trade: Any, market_outcome: str) -> float:
   """
   Calculate actual P&L for a trade.
+  trade: dict-like (from Convex) with position_size, size, side, action, price.
 
   position_size = dollars spent. price = cost per share (0-1).
   Win: payout = (position_size / price) * $1, profit = payout - position_size
   Loss: profit = -position_size
   """
-  size = trade.position_size or trade.size or 0
+  size = trade.get("position_size") or trade.get("size") or 0
   if size <= 0:
     return 0.0
 
-  bet_side = trade.side or trade.action or ""
+  bet_side = trade.get("side") or trade.get("action") or ""
 
   if bet_side == "ARBITRAGE":
     return 0.0
 
   if bet_side == "YES":
     if market_outcome == "YES":
-      price = trade.price or 0.5
+      price = trade.get("price") or 0.5
       if price <= 0:
         return 0.0
       payout = size / price
@@ -154,7 +161,7 @@ def calculate_trade_pnl(trade: Trade, market_outcome: str) -> float:
 
   if bet_side == "NO":
     if market_outcome == "NO":
-      price = trade.price or 0.5
+      price = trade.get("price") or 0.5
       if price <= 0:
         return 0.0
       payout = size / price
@@ -170,67 +177,59 @@ def settle_trades():
   Check unsettled trades and calculate P&L for resolved markets.
   Call periodically (e.g. every 60s).
   """
-  if not Session:
+  if not is_db_configured():
     return
 
-  session = Session()
-  try:
-    unsettled = session.query(Trade).filter(Trade.status == "paper").all()
+  unsettled = list_unsettled_trades()
+  if not unsettled:
+    return
 
-    if not unsettled:
-      return
+  slugs = set(t["market_ticker"] for t in unsettled if t.get("market_ticker") and t["market_ticker"] != "unknown")
+  settled_any = False
+  now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
-    slugs = set(t.market_ticker for t in unsettled if t.market_ticker and t.market_ticker != "unknown")
-    settled_any = False
+  for slug in slugs:
+    resolution = check_market_resolution(slug)
+    if not resolution["resolved"]:
+      resolution = resolve_outcome_via_rtds(slug)
+    if not resolution["resolved"]:
+      continue
 
-    for slug in slugs:
-      # Prefer Polymarket API (authoritative); use RTDS only when not resolved yet
-      resolution = check_market_resolution(slug)
-      if not resolution["resolved"]:
-        resolution = resolve_outcome_via_rtds(slug)
-      if not resolution["resolved"]:
+    outcome = resolution["outcome"]
+
+    existing = get_market_outcome_by_slug(slug)
+    if not existing:
+      first_trade = next(t for t in unsettled if t.get("market_ticker") == slug)
+      insert_market_outcome(
+        slug=slug,
+        condition_id=first_trade.get("condition_id") or "",
+        outcome=outcome,
+        resolved_at_ms=now_ms,
+      )
+
+    for trade in (t for t in unsettled if t.get("market_ticker") == slug):
+      if trade.get("market_outcome"):
         continue
+      settled_any = True
+      actual_pnl = calculate_trade_pnl(trade, outcome)
+      status = "won" if actual_pnl > 0 else "lost"
+      update_trade_settlement(
+        trade_id=trade["_id"],
+        market_outcome=outcome,
+        actual_profit=actual_pnl,
+        status=status,
+        settled_at_ms=now_ms,
+      )
 
-      outcome = resolution["outcome"]
+      logger.info(
+        f"Settled trade #{trade['_id']} | "
+        f"Strategy: {trade.get('strategy')} | "
+        f"Action: {trade.get('side')} | "
+        f"Outcome: {outcome} | "
+        f"P&L: ${actual_pnl:.2f} | "
+        f"Status: {status.upper()}"
+      )
 
-      existing = session.query(MarketOutcome).filter_by(slug=slug).first()
-      if not existing:
-        first_trade = next(t for t in unsettled if t.market_ticker == slug)
-        mo = MarketOutcome(
-          slug=slug,
-          condition_id=first_trade.condition_id or "",
-          outcome=outcome,
-          resolved_at=datetime.now(timezone.utc).replace(tzinfo=None)
-        )
-        session.add(mo)
-
-      for trade in (t for t in unsettled if t.market_ticker == slug):
-        if trade.market_outcome:
-          continue
-        settled_any = True
-        actual_pnl = calculate_trade_pnl(trade, outcome)
-        trade.market_outcome = outcome
-        trade.actual_profit = actual_pnl
-        trade.status = "won" if actual_pnl > 0 else "lost"
-        trade.settled_at = datetime.now(timezone.utc).replace(tzinfo=None)
-
-        logger.info(
-          f"Settled trade #{trade.id} | "
-          f"Strategy: {trade.strategy} | "
-          f"Action: {trade.side} | "
-          f"Outcome: {outcome} | "
-          f"P&L: ${actual_pnl:.2f} | "
-          f"Status: {trade.status.upper()}"
-        )
-
-    session.commit()
-
-    if settled_any:
-      from src.utils.balance import get_current_balance
-      logger.log("BALANCE", f"Current Balance: ${get_current_balance():,.2f}")
-
-  except Exception as e:
-    logger.error(f"Error settling trades: {e}")
-    session.rollback()
-  finally:
-    session.close()
+  if settled_any:
+    from src.utils.balance import get_current_balance
+    logger.log("BALANCE", f"Current Balance: ${get_current_balance():,.2f}")

@@ -1,0 +1,12 @@
+{
+  "name": "bot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "python main.py",
+    "check-db": "python scripts/check_db.py",
+    "init-db": "python scripts/init_db.py",
+    "pnl-summary": "python scripts/pnl_summary.py",
+    "settle-now": "python scripts/settle_now.py"
+  }
+}
