@@ -76,25 +76,8 @@ export function WinRateHeatmap({ trades }: WinRateHeatmapProps) {
       <CardCorners />
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 px-4 py-3">
         <span className="text-sm font-medium text-foreground">
-          When does the bot win most?
+          Trades Heatmap
         </span>
-        <div className="flex rounded border border-border/60 bg-muted/30 p-0.5">
-          {(["winRate", "pnl"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMetric(m)}
-              className={cn(
-                "rounded-md px-2 py-1 text-xs font-medium transition-colors duration-150",
-                metric === m
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              {m === "winRate" ? "Win rate" : "P&L"}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Best / Worst callout */}
@@ -139,7 +122,7 @@ export function WinRateHeatmap({ trades }: WinRateHeatmapProps) {
         <div
           className="grid w-full min-w-max gap-px"
           style={{
-            gridTemplateColumns: "auto repeat(12, minmax(18px, 1fr))",
+            gridTemplateColumns: "auto repeat(12, minmax(44px, 1fr))",
             gridTemplateRows: "repeat(7, 24px) 20px",
           }}
         >

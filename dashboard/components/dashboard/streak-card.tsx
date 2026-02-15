@@ -16,8 +16,10 @@ import type {
 const COLS = 25;
 const ROWS = 4;
 const TOTAL = COLS * ROWS; // 40
-const CELL_PX = 15;
 const GAP_PX = 2;
+const MAX_CELL_PX = 15;
+const MAX_GRID_WIDTH = COLS * MAX_CELL_PX + (COLS - 1) * GAP_PX;
+const MAX_GRID_HEIGHT = ROWS * MAX_CELL_PX + (ROWS - 1) * GAP_PX;
 
 interface StreakCardProps {
   data: StreakGraphType;
@@ -85,35 +87,36 @@ export function StreakCard({ data }: StreakCardProps) {
 
   return (
     <TooltipProvider delay={0}>
-      <div className="flex h-full flex-col p-4">
+      <div className="flex h-full min-w-0 flex-col p-3 sm:p-4">
         <div className="flex items-center justify-between">
-          <span className="text-[0.65rem] font-medium uppercase text-muted-foreground">
+          <span className="text-[0.6rem] font-medium uppercase text-muted-foreground sm:text-[0.65rem]">
             Streak
           </span>
           {currentStreak > 0 && (
-            <span className="text-[0.65rem] tabular-nums text-muted-foreground">
+            <span className="text-[0.6rem] tabular-nums text-muted-foreground sm:text-[0.65rem]">
               {currentStreak}
               {streakType}
             </span>
           )}
         </div>
-        <div className="mt-2 flex w-full justify-end">
+        <div className="mt-2 flex min-w-0 w-full justify-end">
           <div
-            className="grid shrink-0"
+            className="grid w-full max-w-full shrink-0"
             style={{
-              width: COLS * CELL_PX + (COLS - 1) * GAP_PX,
-              height: ROWS * CELL_PX + (ROWS - 1) * GAP_PX,
-              gridTemplateColumns: `repeat(${COLS}, ${CELL_PX}px)`,
-              gridTemplateRows: `repeat(${ROWS}, ${CELL_PX}px)`,
+              maxWidth: MAX_GRID_WIDTH,
+              maxHeight: MAX_GRID_HEIGHT,
+              aspectRatio: MAX_GRID_WIDTH / MAX_GRID_HEIGHT,
+              gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
+              gridTemplateRows: `repeat(${ROWS}, minmax(0, 1fr))`,
               gap: GAP_PX,
             }}
           >
-          {padded.map((entry, i) => (
-            <TradeTooltip key={i} entry={entry} />
-          ))}
+            {padded.map((entry, i) => (
+              <TradeTooltip key={i} entry={entry} />
+            ))}
           </div>
         </div>
-        <p className="mt-1.5 text-right text-[0.55rem] text-muted-foreground">
+        <p className="mt-1.5 text-right text-[0.5rem] text-muted-foreground sm:text-[0.55rem]">
           1 square = 1 trade · older → newer
         </p>
       </div>

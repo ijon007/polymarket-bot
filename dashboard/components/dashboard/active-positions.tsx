@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,20 @@ import { timeAgo } from "@/lib/format";
 import type { TradeRow } from "@/types/dashboard";
 import type { DashboardFilter } from "./date-range-bar";
 import { CaretUpIcon, CaretDownIcon, FileCsvIcon } from "@phosphor-icons/react";
+
+const MOBILE_BREAKPOINT = "(max-width: 1023px)";
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia(MOBILE_BREAKPOINT);
+    const update = () => setIsMobile(m.matches);
+    update();
+    m.addEventListener("change", update);
+    return () => m.removeEventListener("change", update);
+  }, []);
+  return isMobile;
+}
 
 interface ActivePositionsProps {
   trades: TradeRow[];
@@ -42,6 +56,8 @@ function downloadCsv(trades: TradeRow[]) {
 export function ActivePositions({ trades, filter }: ActivePositionsProps) {
   const [sortKey, setSortKey] = useState<SortKey>("executedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const isMobile = useIsMobile();
+  const [mobileExpanded, setMobileExpanded] = useState(false);
 
   const filtered = useMemo(() => {
     if (!filter) return trades;
@@ -110,11 +126,40 @@ export function ActivePositions({ trades, filter }: ActivePositionsProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <span className="text-[0.65rem] font-medium uppercase text-muted-foreground">
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-2 px-4 py-3",
+          isMobile && "cursor-pointer select-none touch-manipulation"
+        )}
+        role={isMobile ? "button" : undefined}
+        tabIndex={isMobile ? 0 : undefined}
+        onClick={isMobile ? () => setMobileExpanded((v) => !v) : undefined}
+        onKeyDown={
+          isMobile
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setMobileExpanded((v) => !v);
+                }
+              }
+            : undefined
+        }
+        aria-expanded={isMobile ? mobileExpanded : undefined}
+        aria-label={isMobile ? (mobileExpanded ? "Collapse positions" : "Expand positions") : undefined}
+      >
+        <span className="flex items-center gap-1.5 text-[0.65rem] font-medium uppercase text-muted-foreground">
+          {isMobile && (
+            <span className="text-muted-foreground" aria-hidden>
+              {mobileExpanded ? (
+                <CaretUpIcon className="size-3.5" />
+              ) : (
+                <CaretDownIcon className="size-3.5" />
+              )}
+            </span>
+          )}
           Positions
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           <span className="tabular-nums text-[0.65rem] text-muted-foreground">
             {filtered.length}
             {filtered.length !== trades.length && (
@@ -134,7 +179,8 @@ export function ActivePositions({ trades, filter }: ActivePositionsProps) {
           </Button>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-4 pb-3">
+      {(!isMobile || mobileExpanded) && (
+      <div className="flex-1 overflow-y-auto scrollbar-thin px-4 pb-3 min-h-0">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border text-left text-[0.6rem]">
@@ -203,6 +249,7 @@ export function ActivePositions({ trades, filter }: ActivePositionsProps) {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

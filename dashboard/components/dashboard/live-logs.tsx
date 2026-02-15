@@ -3,6 +3,21 @@
 import { useRef, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { LogEntry, LogLevel } from "@/types/dashboard";
+import { CaretUpIcon, CaretDownIcon } from "@phosphor-icons/react";
+
+const MOBILE_BREAKPOINT = "(max-width: 1023px)";
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia(MOBILE_BREAKPOINT);
+    const update = () => setIsMobile(m.matches);
+    update();
+    m.addEventListener("change", update);
+    return () => m.removeEventListener("change", update);
+  }, []);
+  return isMobile;
+}
 
 interface LiveLogsProps {
   logs: LogEntry[];
@@ -25,6 +40,8 @@ const levelColor: Record<LogEntry["level"], string> = {
 export function LiveLogs({ logs, follow = true }: LiveLogsProps) {
   const [levelFilter, setLevelFilter] = useState<LogLevel | "ALL">("ALL");
   const containerRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  const [mobileExpanded, setMobileExpanded] = useState(false);
 
   const filtered = levelFilter === "ALL"
     ? logs
@@ -37,11 +54,40 @@ export function LiveLogs({ logs, follow = true }: LiveLogsProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <span className="text-[0.65rem] font-medium uppercase text-muted-foreground">
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-2 px-4 py-3",
+          isMobile && "cursor-pointer select-none touch-manipulation"
+        )}
+        role={isMobile ? "button" : undefined}
+        tabIndex={isMobile ? 0 : undefined}
+        onClick={isMobile ? () => setMobileExpanded((v) => !v) : undefined}
+        onKeyDown={
+          isMobile
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setMobileExpanded((v) => !v);
+                }
+              }
+            : undefined
+        }
+        aria-expanded={isMobile ? mobileExpanded : undefined}
+        aria-label={isMobile ? (mobileExpanded ? "Collapse logs" : "Expand logs") : undefined}
+      >
+        <span className="flex items-center gap-1.5 text-[0.65rem] font-medium uppercase text-muted-foreground">
+          {isMobile && (
+            <span className="text-muted-foreground" aria-hidden>
+              {mobileExpanded ? (
+                <CaretUpIcon className="size-3.5" />
+              ) : (
+                <CaretDownIcon className="size-3.5" />
+              )}
+            </span>
+          )}
           Live Logs
         </span>
-        <div className="flex gap-0.5">
+        <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
           {LEVELS.map(({ value, label }) => (
             <button
               key={value}
@@ -59,9 +105,10 @@ export function LiveLogs({ logs, follow = true }: LiveLogsProps) {
           ))}
         </div>
       </div>
+      {(!isMobile || mobileExpanded) && (
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto scrollbar-thin overflow-x-hidden px-4 pb-3"
+        className="flex-1 min-h-0 overflow-y-auto scrollbar-thin overflow-x-hidden px-4 pb-3"
       >
         {filtered.length === 0 ? (
           <p className="py-4 text-center text-[0.7rem] text-muted-foreground">
@@ -77,6 +124,7 @@ export function LiveLogs({ logs, follow = true }: LiveLogsProps) {
           ))
         )}
       </div>
+      )}
     </div>
   );
 }

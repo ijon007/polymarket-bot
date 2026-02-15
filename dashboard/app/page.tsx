@@ -58,7 +58,7 @@ export default function Page() {
   );
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-background font-mono transition-colors duration-200">
+    <div className="flex h-dvh flex-col overflow-y-auto overflow-x-hidden bg-background font-mono transition-colors duration-200 lg:overflow-hidden">
       <DashboardHeader
         lastUpdated={lastUpdated}
         onRefresh={refreshData}
@@ -66,11 +66,11 @@ export default function Page() {
         openPositions={openPositions}
       />
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
-        {/* Layout: left sidebar | right (Charts, Positions, Logs) — no page overflow */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden lg:grid-cols-12">
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto p-2 lg:overflow-hidden">
+        {/* Layout: left sidebar | right (Charts, Positions, Logs) — scroll on mobile */}
+        <div className="grid grid-cols-1 gap-2 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:grid-cols-12">
           {/* Left column: Account card, Bot Analytics, System Status */}
-          <aside className="flex min-h-0 flex-col gap-2 overflow-y-auto lg:col-span-3">
+          <aside className="flex flex-col gap-2 lg:col-span-3 lg:min-h-0 lg:overflow-y-auto">
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
               <AccountSummary account={mockAccount} />
@@ -90,12 +90,12 @@ export default function Page() {
           </aside>
 
           {/* Right column: fixed-height charts, then Positions + Logs (Logs scrollable) */}
-          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden lg:col-span-9">
+          <div className="flex flex-1 flex-col gap-2 lg:min-h-0 lg:overflow-hidden lg:col-span-9">
             <div className="grid shrink-0 grid-cols-1 gap-2 sm:grid-cols-2">
-              <div className="h-[350px] min-w-0">
+              <div className="h-[280px] min-w-0 sm:h-[350px]">
                 <EquityChart />
               </div>
-              <div className="h-[350px] min-w-0">
+              <div className="h-[380px] min-w-0 sm:h-[350px]">
                 <WinRateHeatmap trades={mockTrades} />
               </div>
             </div>

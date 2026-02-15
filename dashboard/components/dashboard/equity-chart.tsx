@@ -44,6 +44,22 @@ export function EquityChart() {
     [balanceData]
   );
 
+  const xTicks = useMemo(() => {
+    const n = displayData.length;
+    if (n === 0) return undefined;
+    if (timeRange === "1D") {
+      const numTicks = 8;
+      const step = Math.max(1, Math.floor((n - 1) / numTicks));
+      const indices = Array.from({ length: numTicks }, (_, i) => Math.min(i * step, n - 2));
+      return [...new Set(indices)].map((i) => displayData[i]?.time).filter(Boolean);
+    }
+    const numTicks = 9;
+    const indices = Array.from({ length: numTicks }, (_, i) =>
+      i === numTicks - 1 ? n - 1 : Math.round((i / (numTicks - 1)) * (n - 1))
+    );
+    return [...new Set(indices)].map((i) => displayData[i]?.time).filter(Boolean);
+  }, [displayData, timeRange]);
+
   const firstVal = displayData[0]?.value ?? 0;
   const lastVal = displayData[displayData.length - 1]?.value ?? 0;
   const change = lastVal - firstVal;
@@ -139,7 +155,7 @@ export function EquityChart() {
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-            <XAxis dataKey="time" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+            <XAxis dataKey="time" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} ticks={xTicks} />
             <YAxis
               tickLine={false}
               axisLine={false}
@@ -149,7 +165,7 @@ export function EquityChart() {
                 `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`
               }
               domain={["dataMin - 20", "dataMax + 20"]}
-            />=
+            />
             <Area
               dataKey="value"
               type="monotone"
