@@ -1,0 +1,264 @@
+"use client";
+
+import { useId, useMemo, useRef, useState, useCallback } from "react";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import { Button } from "@/components/ui/button";
+import { CurrencyDollarIcon, EyeIcon, ArrowsClockwiseIcon, DotsThreeIcon } from "@phosphor-icons/react";
+import { cn } from "@/lib/utils";
+import { CardCorners } from "./card-corners";
+import type { BalancePoint, ChartTimeRange } from "@/lib/mock/charts";
+import type { PortfolioDataPoint } from "@/types/dashboard";
+
+type DataView = "balance";
+
+const chartTypeConfig = {
+  balance: { label: "Balance", color: "var(--color-positive)" },
+  value: { label: "Portfolio", color: "var(--color-primary)" },
+} satisfies ChartConfig;
+
+interface BalanceChartProps {
+  balanceData: BalancePoint[];
+  portfolioData: PortfolioDataPoint[];
+  timeRange: ChartTimeRange;
+  onTimeRangeChange?: (r: ChartTimeRange) => void;
+}
+
+function interpolate(
+  data: { time: string; value: number }[],
+  xRatio: number
+): { time: string; value: number } {
+  if (!data.length) return { time: "", value: 0 };
+  if (data.length === 1) return { time: data[0].time, value: data[0].value };
+  const index = Math.max(0, Math.min(xRatio * (data.length - 1), data.length - 1));
+  const i = Math.floor(index);
+  const j = Math.min(i + 1, data.length - 1);
+  const t = index - i;
+  const value = data[i].value + t * (data[j].value - data[i].value);
+  const time = t < 0.5 ? data[i].time : data[j].time;
+  return { time, value };
+}
+
+export function BalanceChart({
+  balanceData,
+  portfolioData,
+  timeRange,
+  onTimeRangeChange,
+}: BalanceChartProps) {
+  const [dataView, setDataView] = useState<DataView>("balance");
+  const [hover, setHover] = useState<{ x: number; value: number; time: string } | null>(null);
+  const chartWrapRef = useRef<HTMLDivElement>(null);
+  const gradientId = useId().replace(/:/g, "");
+
+  const displayData = useMemo(() => {
+    if (dataView === "balance") {
+      return balanceData.map((d) => ({ ...d, time: d.date, value: d.balance }));
+    }
+    return portfolioData.map((d) => ({ ...d, value: d.value }));
+  }, [dataView, balanceData, portfolioData]);
+
+  const firstVal = displayData[0]?.value ?? 0;
+  const lastVal = displayData[displayData.length - 1]?.value ?? 0;
+  const change = lastVal - firstVal;
+  const changePct = firstVal ? (change / firstVal) * 100 : 0;
+  const isPositive = change >= 0;
+
+  const onChartMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const el = chartWrapRef.current;
+      if (!el || !displayData.length) return;
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const w = rect.width;
+      if (x < 0 || x > w) {
+        setHover(null);
+        return;
+      }
+      const xRatio = x / w;
+      const { time, value } = interpolate(displayData, xRatio);
+      setHover({ x, value, time });
+    },
+    [displayData]
+  );
+
+  const onChartMouseLeave = useCallback(() => setHover(null), []);
+
+  return (
+    <div
+      className="relative flex h-full flex-col overflow-hidden rounded border border-border/60 bg-card shadow-sm transition-shadow duration-200 hover:shadow-md"
+    >
+      <CardCorners />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded border border-border/60 bg-muted/30 p-0.5">
+            <button
+              type="button"
+              onClick={() => setDataView("balance")}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors duration-150",
+                dataView === "balance"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <CurrencyDollarIcon className="size-3.5" />
+              User balance over time
+            </button>
+          </div>
+          <div className="flex rounded border border-border/60 bg-muted/30 p-0.5">
+            {(["1D", "7D", "30D", "90D", "1M", "3M"] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => onTimeRangeChange?.(r)}
+                className={cn(
+                  "rounded-md px-2 py-1 text-xs font-medium transition-colors duration-150",
+                  timeRange === r
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Toggle visibility"
+          >
+            <EyeIcon className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Refresh data"
+          >
+            <ArrowsClockwiseIcon className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="More options"
+          >
+            <DotsThreeIcon className="size-4" />
+          </Button>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 px-4 py-2">
+        <span
+          className={cn(
+            "text-sm font-semibold tabular-nums transition-colors duration-150",
+            isPositive ? "text-positive" : "text-destructive"
+          )}
+        >
+          {isPositive ? "+" : ""}
+          {changePct.toFixed(2)}% (${change.toFixed(2)})
+        </span>
+      </div>
+      <div
+        ref={chartWrapRef}
+        className="relative min-h-[340px] w-full flex-1 cursor-crosshair px-2 pb-4"
+        onMouseMove={onChartMouseMove}
+        onMouseLeave={onChartMouseLeave}
+      >
+        {hover && (
+          <>
+            <div
+              className="pointer-events-none absolute top-0 bottom-8 z-10 w-px border-l border-dashed border-foreground/50"
+              style={{ left: hover.x }}
+            />
+            <div
+              className="pointer-events-none absolute z-10 rounded border border-border/60 bg-card px-2 py-1.5 text-xs shadow-lg"
+              style={{
+                left: Math.min(hover.x + 10, (chartWrapRef.current?.offsetWidth ?? 400) - 90),
+                top: 8,
+              }}
+            >
+              <div className="text-muted-foreground">{hover.time}</div>
+              <div className="font-semibold tabular-nums text-foreground">
+                ${hover.value.toFixed(2)}
+              </div>
+            </div>
+          </>
+        )}
+        <ChartContainer
+          config={chartTypeConfig}
+          className="h-[340px] w-full [&_.recharts-wrapper]:block!"
+        >
+          <AreaChart
+            data={displayData}
+            margin={{ top: 8, right: 8, bottom: 24, left: 0 }}
+          >
+            <defs>
+              <linearGradient id={`balanceFill-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+                <stop
+                  offset="0%"
+                  stopColor="var(--color-positive)"
+                  stopOpacity={0.25}
+                />
+                <stop
+                  offset="100%"
+                  stopColor="var(--color-positive)"
+                  stopOpacity={0}
+                />
+              </linearGradient>
+            </defs>
+            <CartesianGrid
+              vertical={false}
+              strokeDasharray="3 3"
+              stroke="var(--color-border)"
+            />
+            <XAxis
+              dataKey="time"
+              tickLine={false}
+              axisLine={false}
+              tick={{ fontSize: 10 }}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tick={{ fontSize: 10 }}
+              width={48}
+              tickFormatter={(v: number) =>
+                `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`
+              }
+              domain={["dataMin - 20", "dataMax + 20"]}
+            />
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  formatter={(value) => [
+                    `$${Number(value).toFixed(2)}`,
+                    dataView === "balance" ? "Balance" : "Portfolio",
+                  ]}
+                />
+              }
+            />
+            <Area
+              dataKey="value"
+              type="monotone"
+              stroke="var(--color-positive)"
+              strokeWidth={2}
+              fill={`url(#balanceFill-${gradientId})`}
+              dot={false}
+              isAnimationActive
+              animationDuration={400}
+            />
+          </AreaChart>
+        </ChartContainer>
+      </div>
+    </div>
+  );
+}

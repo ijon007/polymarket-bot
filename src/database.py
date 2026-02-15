@@ -1,5 +1,5 @@
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, String, Float, DateTime, Integer, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
@@ -47,6 +47,17 @@ def _migrate_schema_on_engine(eng):
         ALTER TABLE trades ADD COLUMN IF NOT EXISTS settled_at TIMESTAMP;
       """))
       conn.commit()
+      # Convert timestamp columns to TIMESTAMPTZ so UTC is stored unambiguously
+      for stmt in (
+        "ALTER TABLE trades ALTER COLUMN executed_at TYPE TIMESTAMPTZ USING executed_at AT TIME ZONE 'UTC'",
+        "ALTER TABLE trades ALTER COLUMN settled_at TYPE TIMESTAMPTZ USING settled_at AT TIME ZONE 'UTC'",
+        "ALTER TABLE market_outcomes ALTER COLUMN resolved_at TYPE TIMESTAMPTZ USING resolved_at AT TIME ZONE 'UTC'",
+      ):
+        try:
+          conn.execute(text(stmt))
+          conn.commit()
+        except Exception:
+          pass  # Column may already be TIMESTAMPTZ
     logger.info("Schema migration completed")
   except Exception as e:
     logger.warning(f"Schema migration: {e}")
@@ -77,11 +88,11 @@ class Trade(Base):
   expected_profit = Column(Float)
   confidence = Column(Float)
   reason = Column(String)
-  executed_at = Column(DateTime)
+  executed_at = Column(DateTime(timezone=True))  # UTC
   status = Column(String)
   market_outcome = Column(String, nullable=True)  # YES or NO when settled
   actual_profit = Column(Float, nullable=True)  # Realized P&L
-  settled_at = Column(DateTime, nullable=True)
+  settled_at = Column(DateTime(timezone=True), nullable=True)  # UTC
 
 
 class MarketOutcome(Base):
@@ -91,7 +102,7 @@ class MarketOutcome(Base):
   slug = Column(String, unique=True)
   condition_id = Column(String)
   outcome = Column(String)  # YES or NO
-  resolved_at = Column(DateTime)
+  resolved_at = Column(DateTime(timezone=True))  # UTC
   btc_start_price = Column(Float, nullable=True)
   btc_end_price = Column(Float, nullable=True)
 
@@ -155,7 +166,7 @@ def _dummy_trade_payload():
     "expected_profit": 0.0,
     "confidence": 0.0,
     "reason": "DB schema check",
-    "executed_at": datetime.utcnow(),
+    "executed_at": datetime.now(timezone.utc),
     "status": "paper",
   }
 
@@ -222,7 +233,7 @@ def _sanitize_trade_data(data):
       elif key in ("position_size", "size", "expected_profit", "confidence"):
         out[key] = 0.0
       elif key == "executed_at":
-        out[key] = datetime.utcnow()
+        out[key] = datetime.now(timezone.utc)
   return out
 
 

@@ -1,71 +1,119 @@
+"use client";
+
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   DashboardHeader,
   AccountSummary,
   ActivePositions,
   SystemStatus,
-  ScanConfig,
-  PerformanceStats,
   LiveLogs,
-  MarketData,
   BotAnalytics,
-  PortfolioChart,
-  PositionChart,
+  PnlChart,
+  EquityChart,
+  CardCorners,
+  StatusBar,
 } from "@/components/dashboard";
+import type { DashboardFilter } from "@/components/dashboard/date-range-bar";
+import { Toast } from "@/components/ui/toast";
 
-import { mockSystemStatus, mockScanConfig } from "@/lib/mock/system";
+import { mockSystemStatus } from "@/lib/mock/system";
 import { mockAccount } from "@/lib/mock/account";
-import { mockPerformance } from "@/lib/mock/performance";
 import { mockLogs } from "@/lib/mock/logs";
-import { mockMarkets } from "@/lib/mock/markets";
 import { mockAnalytics, mockTrades } from "@/lib/mock/analytics";
-import { mockPortfolioData, mockPositionPerformance, positionSymbols } from "@/lib/mock/charts";
+
+const defaultFilter: DashboardFilter = { positionSide: "all", status: "all" };
 
 export default function Page() {
+  const [lastUpdated, setLastUpdated] = useState(0);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    setLastUpdated(Date.now());
+  }, []);
+
+  const refreshData = useCallback(() => {
+    setIsRefreshing(true);
+    setLastUpdated(Date.now());
+    setToastMessage("Data refreshed");
+    setTimeout(() => setIsRefreshing(false), 400);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "r" && e.key !== "R") return;
+      const t = e.target as HTMLElement;
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") return;
+      e.preventDefault();
+      refreshData();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [refreshData]);
+
+  const openPositions = useMemo(
+    () => mockTrades.filter((t) => t.status !== "settled").length,
+    []
+  );
+
   return (
-    <div className="flex min-h-dvh flex-col bg-background font-mono">
-      {/* Header */}
+    <div className="flex h-dvh flex-col overflow-hidden bg-background font-mono transition-colors duration-200">
       <DashboardHeader status={mockSystemStatus} />
 
-      {/* Main grid — dense, edge-to-edge, shared borders */}
-      <div className="grid flex-1 grid-cols-12 grid-rows-[auto_1fr_auto] border-t border-border">
-        {/* ── Row 1: Account | Positions | System ── */}
-        <div className="col-span-3 border-b border-r border-border">
-          <AccountSummary account={mockAccount} />
-        </div>
-        <div className="col-span-6 border-b border-r border-border">
-          <ActivePositions trades={mockTrades} />
-        </div>
-        <div className="col-span-3 border-b border-border">
-          <SystemStatus status={mockSystemStatus} />
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
+        <div className="flex shrink-0 items-center justify-end gap-2">
+          <StatusBar
+            lastUpdated={lastUpdated}
+            onRefresh={refreshData}
+            isRefreshing={isRefreshing}
+            openPositions={openPositions}
+          />
         </div>
 
-        {/* ── Row 2: Portfolio Chart | Position Chart ── */}
-        <div className="col-span-8 border-b border-r border-border">
-          <PortfolioChart data={mockPortfolioData} />
-        </div>
-        <div className="col-span-4 border-b border-border">
-          <PositionChart data={mockPositionPerformance} symbols={positionSymbols} />
-        </div>
+        {/* Layout: left sidebar | right (Charts, Positions, Logs) — no page overflow */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden lg:grid-cols-12">
+          {/* Left column: Account card, Bot Analytics, System Status */}
+          <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto lg:col-span-3">
+            <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
+              <CardCorners />
+              <AccountSummary account={mockAccount} />
+            </div>
+            <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
+              <CardCorners />
+              <BotAnalytics analytics={mockAnalytics} />
+            </div>
+            <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
+              <CardCorners />
+              <SystemStatus status={mockSystemStatus} />
+            </div>
+          </aside>
 
-        {/* ── Row 3: Live Logs | Market Scanner ── */}
-        <div className="col-span-8 border-b border-r border-border">
-          <LiveLogs logs={mockLogs} />
+          {/* Right column: fixed-height charts, then Positions + Logs (Logs scrollable) */}
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden lg:col-span-9">
+            <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="h-[350px] min-w-0">
+                <PnlChart />
+              </div>
+              <div className="h-[350px] min-w-0">
+                <EquityChart />
+              </div>
+            </div>
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-4">
+              <div className="relative flex min-h-0 flex-col overflow-hidden rounded border border-border/60 bg-card shadow-sm sm:col-span-2">
+                <CardCorners />
+                <div className="min-h-0 flex-1 overflow-auto">
+                  <ActivePositions trades={mockTrades} filter={defaultFilter} />
+                </div>
+              </div>
+              <div className="flex min-h-0 flex-col overflow-hidden rounded border border-border/60 bg-card shadow-sm sm:col-span-2">
+                <CardCorners />
+                <LiveLogs logs={mockLogs} follow />
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="col-span-4 border-b border-border">
-          <MarketData markets={mockMarkets} />
-        </div>
-
-        {/* ── Row 4: Performance | Scan Config | Bot Analytics ── */}
-        <div className="col-span-4 border-r border-border">
-          <PerformanceStats stats={mockPerformance} />
-        </div>
-        <div className="col-span-4 border-r border-border">
-          <ScanConfig config={mockScanConfig} />
-        </div>
-        <div className="col-span-4">
-          <BotAnalytics analytics={mockAnalytics} />
-        </div>
-      </div>
+      </main>
+      <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 from src.database import log_trade
 from src.config import PAPER_MODE
@@ -34,7 +34,7 @@ def execute_trade(market, signal):
       "expected_profit": float(signal.get("expected_profit") or 0),
       "confidence": float(signal.get("confidence") or 0),
       "reason": signal.get("reason") or "",
-      "executed_at": datetime.utcnow(),
+      "executed_at": datetime.now(timezone.utc),
       "status": "paper",
     }
 
@@ -64,7 +64,7 @@ def execute_trade(market, signal):
       "expected_profit": float(signal.get("expected_profit") or 0),
       "confidence": float(signal.get("confidence") or 0),
       "reason": signal.get("reason") or "",
-      "executed_at": datetime.utcnow(),
+      "executed_at": datetime.now(timezone.utc),
       "status": "paper",
     }
 
@@ -79,6 +79,6 @@ def execute_trade(market, signal):
   # Log to database (best-effort; never block or fail the trade)
   try:
     log_trade(trade_data)
-  except Exception:
-    pass
+  except Exception as e:
+    logger.error(f"Failed to log trade to database: {e}")
   return True

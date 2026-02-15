@@ -20,7 +20,7 @@ export function AccountSummary({ account }: AccountSummaryProps) {
 
       <div className="mt-2">
         <p className="text-[0.6rem] uppercase text-muted-foreground">Equity</p>
-        <p className="text-2xl font-semibold tabular-nums leading-tight">
+        <p className="text-3xl font-semibold tabular-nums leading-tight">
           {fmt(account.equity)}
         </p>
       </div>
