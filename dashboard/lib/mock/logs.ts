@@ -1,0 +1,25 @@
+import type { LogEntry } from "@/types/dashboard";
+
+export const mockLogs: LogEntry[] = [
+  { timestamp: "2026-02-15 13:10:45", level: "INFO", message: "POLYMARKET ALPHA SCANNER v2.1.0" },
+  { timestamp: "2026-02-15 13:10:45", level: "INFO", message: "Claude Code + Perplexity MCP Research Engine" },
+  { timestamp: "2026-02-15 13:10:45", level: "INFO", message: "Initializing MCP connections..." },
+  { timestamp: "2026-02-15 13:10:45", level: "INFO", message: "Connected: Polymarket REST API (ws://api.polymarket.com)" },
+  { timestamp: "2026-02-15 13:10:45", level: "INFO", message: "Connected: Perplexity Research MCP (deep-research model)" },
+  { timestamp: "2026-02-15 13:10:45", level: "INFO", message: "Connected: Claude Code Engine (claude-opus-4-5)" },
+  { timestamp: "2026-02-15 13:10:45", level: "INFO", message: "Connected: Market Data Feed (real-time)" },
+  { timestamp: "2026-02-15 13:10:46", level: "INFO", message: "Fetching active markets from Polymarket..." },
+  { timestamp: "2026-02-15 13:10:46", level: "INFO", message: "GET /markets?active=true&limit=1000 — 200 OK (342ms)" },
+  { timestamp: "2026-02-15 13:10:47", level: "INFO", message: "Found 847 active markets" },
+  { timestamp: "2026-02-15 13:10:47", level: "INFO", message: "Applying filters: volume >= $100K, liquidity >= $50K" },
+  { timestamp: "2026-02-15 13:10:47", level: "INFO", message: "Filtered to 23 candidate markets" },
+  { timestamp: "2026-02-15 13:10:48", level: "INFO", message: "Scanning btc-updown-5m-1771083600 — YES: 0.52, NO: 0.48, edge: 18.2%" },
+  { timestamp: "2026-02-15 13:10:48", level: "INFO", message: "Scanning eth-updown-5m-1771083600 — YES: 0.61, NO: 0.39, edge: 12.1%" },
+  { timestamp: "2026-02-15 13:10:49", level: "WARN", message: "Market sol-updown-5m-1771083600 has low liquidity ($32K), skipping" },
+  { timestamp: "2026-02-15 13:10:49", level: "INFO", message: "Strategy last_second triggered on btc-updown-5m-1771083600 (30s remaining)" },
+  { timestamp: "2026-02-15 13:10:49", level: "INFO", message: "Executing paper trade: YES @ 0.52, size $10.00" },
+  { timestamp: "2026-02-15 13:10:50", level: "INFO", message: "Trade logged: btc-updown-5m-1771083600 YES $10.00 (paper)" },
+  { timestamp: "2026-02-15 13:10:55", level: "ERROR", message: "WebSocket reconnecting — connection lost to market feed" },
+  { timestamp: "2026-02-15 13:10:57", level: "INFO", message: "WebSocket reconnected successfully" },
+  { timestamp: "2026-02-15 13:11:00", level: "INFO", message: "Scan cycle complete — next scan in 10s" },
+];
