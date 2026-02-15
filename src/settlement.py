@@ -41,9 +41,6 @@ def resolve_outcome_via_rtds(slug: str) -> dict:
   if now < window_end_ts + _RTDS_SETTLE_BUFFER_SEC:
     return {"resolved": False}
   try:
-    from src.config import USE_RTDS
-    if not USE_RTDS:
-      return {"resolved": False}
     from src.utils.rtds_client import get_btc_at_timestamp
     start_price = get_btc_at_timestamp(window_start_ts)
     end_price = get_btc_at_timestamp(window_end_ts)
@@ -184,14 +181,10 @@ def settle_trades():
       return
 
     slugs = set(t.market_ticker for t in unsettled if t.market_ticker and t.market_ticker != "unknown")
-
-    try:
-      from src.config import USE_RTDS
-    except Exception:
-      USE_RTDS = False
+    settled_any = False
 
     for slug in slugs:
-      resolution = resolve_outcome_via_rtds(slug) if USE_RTDS else {"resolved": False}
+      resolution = resolve_outcome_via_rtds(slug)
       if not resolution["resolved"]:
         resolution = check_market_resolution(slug)
       if not resolution["resolved"]:
@@ -213,6 +206,7 @@ def settle_trades():
       for trade in (t for t in unsettled if t.market_ticker == slug):
         if trade.market_outcome:
           continue
+        settled_any = True
         actual_pnl = calculate_trade_pnl(trade, outcome)
         trade.market_outcome = outcome
         trade.actual_profit = actual_pnl
@@ -229,6 +223,10 @@ def settle_trades():
         )
 
     session.commit()
+
+    if settled_any:
+      from src.utils.balance import get_current_balance
+      logger.log("BALANCE", f"Current Balance: ${get_current_balance():,.2f}")
 
   except Exception as e:
     logger.error(f"Error settling trades: {e}")

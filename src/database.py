@@ -1,12 +1,23 @@
+import sys
 from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Float, DateTime, Integer, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from loguru import logger
 from src.config import DATABASE_URL
 
 Base = declarative_base()
-engine = create_engine(DATABASE_URL) if DATABASE_URL else None
+engine = None
+if DATABASE_URL:
+  try:
+    engine = create_engine(DATABASE_URL)
+  except ModuleNotFoundError as e:
+    if "psycopg2" in str(e):
+      raise ModuleNotFoundError(
+        "PostgreSQL driver not installed. From your project venv run: pip install psycopg2-binary"
+      ) from e
+    raise
 Session = sessionmaker(bind=engine) if engine else None
 
 
@@ -85,9 +96,17 @@ def init_db():
   if not engine:
     logger.warning("DATABASE_URL not set - skipping database init")
     return
-  Base.metadata.create_all(engine)
-  _migrate_schema()
-  logger.info("Database initialized")
+  try:
+    Base.metadata.create_all(engine)
+    _migrate_schema()
+    logger.info("Database initialized")
+  except OperationalError as e:
+    logger.error(
+      "Database connection failed (check network/DNS and DATABASE_URL). "
+      "To run without a database, unset DATABASE_URL in .env."
+    )
+    logger.error(str(e.orig) if getattr(e, "orig", None) else str(e))
+    sys.exit(1)
 
 
 def _dummy_trade_payload():

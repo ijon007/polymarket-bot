@@ -93,7 +93,10 @@ def _run_loop() -> None:
   while not _stop.is_set():
     try:
       if websocket is None:
-        logger.error("websocket-client not installed; RTDS disabled")
+        logger.error(
+          "websocket-client not installed; RTDS disabled. "
+          "From your venv run: pip install websocket-client"
+        )
         break
       _ws = websocket.WebSocketApp(
         _WS_URL,

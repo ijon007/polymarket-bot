@@ -1,7 +1,7 @@
 import json
 import time
 import requests
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from loguru import logger
 
 GAMMA_API = "https://gamma-api.polymarket.com"
@@ -151,16 +151,6 @@ def fetch_btc_5min_market():
           token_ids["no"] = ids[1].strip()
       
       logger.info(f"✅ ACTIVE: {slug} | YES: {yes_price}, NO: {no_price} | {seconds_left:.0f}s left")
-
-      # Fallback: register start price when first seen (used if historical at window_start_ts unavailable)
-      from src.utils.market_tracker import market_tracker
-      from src.utils.price_feed import get_btc_price
-      if market_tracker.get_start_price(slug) is None:
-        btc_price = get_btc_price()
-        if btc_price:
-          start_time = end_date - timedelta(minutes=5)
-          market_tracker.register_market(slug, start_time, btc_price)
-      market_tracker.cleanup_old_markets()
 
       return {
         "condition_id": market.get("conditionId"),
