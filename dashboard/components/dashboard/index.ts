@@ -16,3 +16,4 @@ export { PnlChart } from "./pnl-chart";
 export { EquityChart } from "./equity-chart";
 export { CardCorners } from "./card-corners";
 export { StatusBar } from "./status-bar";
+export { StreakCard } from "./streak-card";

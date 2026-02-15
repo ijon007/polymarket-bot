@@ -5,7 +5,7 @@
 export type EngineState = "SCANNING" | "IDLE" | "ERROR" | "STOPPED";
 export type LogLevel = "INFO" | "WARN" | "ERROR";
 export type TradeStatus = "paper" | "executed" | "settled" | "failed";
-export type TradeSide = "YES" | "NO";
+export type TradeSide = "UP" | "DOWN";
 
 // ---------------------------------------------------------------------------
 // System
@@ -113,6 +113,24 @@ export interface BotAnalytics {
   totalPnl: number;
   bestTrade: number;
   worstTrade: number;
+}
+
+/** One cell = one settled trade. Oldest first; display left-to-right, top-to-bottom. */
+export type TradeOutcome = "won" | "lost";
+
+export interface StreakTradeEntry {
+  outcome: TradeOutcome;
+  pnl: number;
+  executedAt: string;
+  side: TradeSide;
+}
+
+export interface StreakGraph {
+  /** Last N settled trades (oldest first). Each entry drives one cell + tooltip. */
+  history: StreakTradeEntry[];
+  /** Current run from end: e.g. 3 = "3W" or "3L" */
+  currentStreak: number;
+  streakType: "W" | "L";
 }
 
 // ---------------------------------------------------------------------------

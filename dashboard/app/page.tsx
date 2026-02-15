@@ -11,6 +11,7 @@ import {
   PnlChart,
   EquityChart,
   CardCorners,
+  StreakCard,
 } from "@/components/dashboard";
 import type { DashboardFilter } from "@/components/dashboard/date-range-bar";
 import { Toast } from "@/components/ui/toast";
@@ -19,6 +20,7 @@ import { mockSystemStatus } from "@/lib/mock/system";
 import { mockAccount } from "@/lib/mock/account";
 import { mockLogs } from "@/lib/mock/logs";
 import { mockAnalytics, mockTrades } from "@/lib/mock/analytics";
+import { mockStreakGraph } from "@/lib/mock/streak";
 
 const defaultFilter: DashboardFilter = { positionSide: "all", status: "all" };
 
@@ -80,6 +82,10 @@ export default function Page() {
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
               <SystemStatus status={mockSystemStatus} />
+            </div>
+            <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
+              <CardCorners />
+              <StreakCard data={mockStreakGraph} />
             </div>
           </aside>
 
