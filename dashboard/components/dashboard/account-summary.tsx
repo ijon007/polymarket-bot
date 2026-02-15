@@ -24,7 +24,7 @@ export function AccountSummary({ account }: AccountSummaryProps) {
       <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
         <div>
           <p className="text-[0.6rem] uppercase text-muted-foreground">Win rate</p>
-          <p className="text-xs tabular-nums">{account.winRate.toFixed(1)}%</p>
+          <p className={cn("text-xs tabular-nums", account.realizedPnl >= 0 ? "text-positive" : "text-destructive")}>{account.winRate.toFixed(1)}%</p>
         </div>
         <div>
           <p className="text-[0.6rem] uppercase text-muted-foreground">Total P&L</p>

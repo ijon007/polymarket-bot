@@ -14,6 +14,7 @@ export { DateRangeBar } from "./date-range-bar";
 export { BalanceChart } from "./balance-chart";
 export { PnlChart } from "./pnl-chart";
 export { EquityChart } from "./equity-chart";
+export { WinRateHeatmap } from "./win-rate-heatmap";
 export { CardCorners } from "./card-corners";
 export { StatusBar } from "./status-bar";
 export { StreakCard } from "./streak-card";

@@ -8,8 +8,8 @@ import {
   SystemStatus,
   LiveLogs,
   BotAnalytics,
-  PnlChart,
   EquityChart,
+  WinRateHeatmap,
   CardCorners,
   StreakCard,
 } from "@/components/dashboard";
@@ -77,15 +77,15 @@ export default function Page() {
             </div>
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
+              <StreakCard data={mockStreakGraph} />
+            </div>
+            <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
+              <CardCorners />
               <BotAnalytics analytics={mockAnalytics} />
             </div>
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
               <SystemStatus status={mockSystemStatus} />
-            </div>
-            <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
-              <CardCorners />
-              <StreakCard data={mockStreakGraph} />
             </div>
           </aside>
 
@@ -93,10 +93,10 @@ export default function Page() {
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden lg:col-span-9">
             <div className="grid shrink-0 grid-cols-1 gap-2 sm:grid-cols-2">
               <div className="h-[350px] min-w-0">
-                <PnlChart />
+                <EquityChart />
               </div>
               <div className="h-[350px] min-w-0">
-                <EquityChart />
+                <WinRateHeatmap trades={mockTrades} />
               </div>
             </div>
             <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-4">

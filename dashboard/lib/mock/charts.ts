@@ -168,3 +168,111 @@ export const mockPositionPerformance: PositionPerformancePoint[] = [
 ];
 
 export const positionSymbols = ["BTC", "ETH", "SOL"] as const;
+
+// ---------------------------------------------------------------------------
+// When does the bot win most? Day-of-week × time-of-day (win rate)
+// ---------------------------------------------------------------------------
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+export interface HeatmapCell {
+  dayOfWeek: number;
+  hourBucket: number;
+  wins: number;
+  total: number;
+  pnl: number;
+}
+
+export interface BestWorstSlot {
+  dayLabel: string;
+  timeLabel: string;
+  winRatePct: number;
+  trades: number;
+  pnl: number;
+}
+
+export interface WinRateHeatmapData {
+  dayLabels: string[];
+  hourLabels: string[];
+  cells: HeatmapCell[];
+  /** Best slot by win rate (min 2 trades). */
+  best: BestWorstSlot | null;
+  /** Worst slot by win rate (min 2 trades). */
+  worst: BestWorstSlot | null;
+}
+
+function hourBucketLabel(bucket: number): string {
+  const start = bucket * 2;
+  const end = start + 2;
+  return `${String(start).padStart(2, "0")}–${String(end).padStart(2, "0")}`;
+}
+
+/**
+ * Aggregates settled trades by day-of-week and 2h time bucket.
+ * Returns cells (only real data), plus best/worst slot by win rate (slots with ≥ minTrades).
+ */
+export function getWinRateHeatmap(
+  trades: { executedAt: string; pnl: number; status?: string }[],
+  minTradesForBestWorst = 2
+): WinRateHeatmapData {
+  const dayLabels = [...DAY_LABELS];
+  const hourLabels = Array.from({ length: 12 }, (_, i) => hourBucketLabel(i));
+  const grid = new Map<string, { pnl: number; wins: number; total: number }>();
+
+  for (const t of trades) {
+    if (t.status === "paper") continue;
+    const [datePart, timePart] = t.executedAt.split(" ");
+    if (!datePart || !timePart) continue;
+    const [y, mo, d] = datePart.split("-").map(Number);
+    const [h] = timePart.split(":").map(Number);
+    const date = new Date(y, (mo ?? 1) - 1, d ?? 1, h ?? 0, 0, 0);
+    const dayOfWeek = date.getDay();
+    const hourBucket = Math.min(11, Math.floor((date.getHours() || 0) / 2));
+    const key = `${dayOfWeek},${hourBucket}`;
+    const cur = grid.get(key) ?? { pnl: 0, wins: 0, total: 0 };
+    cur.pnl += t.pnl;
+    cur.total += 1;
+    if (t.pnl > 0) cur.wins += 1;
+    grid.set(key, cur);
+  }
+
+  const cells: HeatmapCell[] = [];
+  for (let day = 0; day < 7; day++) {
+    for (let hour = 0; hour < 12; hour++) {
+      const key = `${day},${hour}`;
+      const cur = grid.get(key) ?? { pnl: 0, wins: 0, total: 0 };
+      cells.push({
+        dayOfWeek: day,
+        hourBucket: hour,
+        pnl: cur.pnl,
+        wins: cur.wins,
+        total: cur.total,
+      });
+    }
+  }
+
+  const slotsWithEnough = cells.filter((c) => c.total >= minTradesForBestWorst);
+  const byWinRate = [...slotsWithEnough].sort((a, b) => {
+    const rateA = a.total ? a.wins / a.total : 0;
+    const rateB = b.total ? b.wins / b.total : 0;
+    return rateB - rateA;
+  });
+  const bestCell = byWinRate[0] ?? null;
+  const worstCell = byWinRate[byWinRate.length - 1] ?? null;
+
+  const toSlot = (c: HeatmapCell): BestWorstSlot => ({
+    dayLabel: dayLabels[c.dayOfWeek],
+    timeLabel: hourLabels[c.hourBucket],
+    winRatePct: c.total ? (c.wins / c.total) * 100 : 0,
+    trades: c.total,
+    pnl: c.pnl,
+  });
+
+  return {
+    dayLabels,
+    hourLabels,
+    cells,
+    best: bestCell ? toSlot(bestCell) : null,
+    worst: worstCell && worstCell !== bestCell ? toSlot(worstCell) : null,
+  };
+}
