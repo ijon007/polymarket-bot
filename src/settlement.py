@@ -200,7 +200,7 @@ def settle_trades():
           slug=slug,
           condition_id=first_trade.condition_id or "",
           outcome=outcome,
-          resolved_at=datetime.now(timezone.utc)
+          resolved_at=datetime.now(timezone.utc).replace(tzinfo=None)
         )
         session.add(mo)
 
@@ -212,7 +212,7 @@ def settle_trades():
         trade.market_outcome = outcome
         trade.actual_profit = actual_pnl
         trade.status = "won" if actual_pnl > 0 else "lost"
-        trade.settled_at = datetime.now(timezone.utc)
+        trade.settled_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         logger.info(
           f"Settled trade #{trade.id} | "

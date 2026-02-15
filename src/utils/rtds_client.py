@@ -64,7 +64,14 @@ def _on_message(_, message: str) -> None:
 
 
 def _on_error(_, error: Exception) -> None:
-  logger.warning(f"RTDS WebSocket error: {error}")
+  err_str = str(error).lower()
+  if "getaddrinfo failed" in err_str or "11001" in err_str or "name or service not known" in err_str:
+    logger.warning(
+      f"RTDS WebSocket DNS/network error: cannot resolve {_WS_URL} — "
+      "check internet, DNS, VPN/firewall, or try another network"
+    )
+  else:
+    logger.warning(f"RTDS WebSocket error: {error}")
 
 
 def _on_close(_, close_status_code, close_msg) -> None:

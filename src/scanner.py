@@ -7,55 +7,9 @@ from loguru import logger
 from src.utils.price_feed import get_btc_price_at_timestamp
 
 GAMMA_API = "https://gamma-api.polymarket.com"
-_REQUEST_RETRIES = 3
-_REQUEST_RETRY_DELAY = 2
-
-
-def _parse_market_result(market, slug):
-  """Build result dict from API market object."""
-  outcome_prices = market.get("outcomePrices", "")
-  if isinstance(outcome_prices, str):
-    s = outcome_prices.strip()
-    if s.startswith("["):
-      prices = [float(x) for x in json.loads(s)]
-    else:
-      prices = [float(p.strip()) for p in s.split(",")]
-  else:
-    prices = [float(p) for p in outcome_prices]
-
-  if len(prices) < 2:
-    return None
-
-  yes_price = float(prices[0])
-  no_price = float(prices[1])
-
-  end_date_str = market.get("endDateIso")
-  if not end_date_str:
-    return None
-
-  end_date = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
-  if end_date.tzinfo is None:
-    end_date = end_date.replace(tzinfo=timezone.utc)
-  seconds_left = (end_date - datetime.now(timezone.utc)).total_seconds()
-
-  clob_ids = market.get("clobTokenIds", "")
-  token_ids = {}
-  if clob_ids:
-    ids = clob_ids.split(",") if isinstance(clob_ids, str) else clob_ids
-    if len(ids) >= 2:
-      token_ids["yes"] = ids[0].strip()
-      token_ids["no"] = ids[1].strip()
-
-  return {
-    "condition_id": market.get("conditionId"),
-    "question": market.get("question"),
-    "yes_price": yes_price,
-    "no_price": no_price,
-    "end_date": end_date,
-    "tokens": token_ids,
-    "seconds_left": int(seconds_left),
-    "slug": slug
-  }
+_REQUEST_RETRIES = 5
+_REQUEST_RETRY_DELAY = 3
+_DNS_RETRY_DELAY = 8  # longer wait when DNS fails (give network time to recover)
 
 
 def fetch_btc_5min_market():
@@ -74,11 +28,21 @@ def fetch_btc_5min_market():
           break
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, OSError) as e:
           last_err = e
+          err_str = str(e).lower()
+          is_dns = "getaddrinfo failed" in err_str or "11001" in err_str or "name or service not known" in err_str
+          delay = _DNS_RETRY_DELAY if is_dns else _REQUEST_RETRY_DELAY
           if attempt < _REQUEST_RETRIES - 1:
-            time.sleep(_REQUEST_RETRY_DELAY)
+            time.sleep(delay)
           continue
       else:
-        logger.warning(f"Network error for {slug} after {_REQUEST_RETRIES} tries: {last_err}")
+        err_str = str(last_err).lower() if last_err else ""
+        if "getaddrinfo failed" in err_str or "11001" in err_str:
+          logger.warning(
+            f"gamma-api.polymarket.com failed to resolve (DNS) after {_REQUEST_RETRIES} tries — "
+            "check internet, DNS, or VPN; scanner will retry next cycle"
+          )
+        else:
+          logger.warning(f"Network error for {slug} after {_REQUEST_RETRIES} tries: {last_err}")
         continue
       if resp.status_code != 200:
         continue

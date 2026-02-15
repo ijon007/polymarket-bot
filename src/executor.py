@@ -34,7 +34,7 @@ def execute_trade(market, signal):
       "expected_profit": float(signal.get("expected_profit") or 0),
       "confidence": float(signal.get("confidence") or 0),
       "reason": signal.get("reason") or "",
-      "executed_at": datetime.now(timezone.utc),
+      "executed_at": datetime.now(timezone.utc).replace(tzinfo=None),
       "status": "paper",
     }
 
@@ -64,7 +64,7 @@ def execute_trade(market, signal):
       "expected_profit": float(signal.get("expected_profit") or 0),
       "confidence": float(signal.get("confidence") or 0),
       "reason": signal.get("reason") or "",
-      "executed_at": datetime.now(timezone.utc),
+      "executed_at": datetime.now(timezone.utc).replace(tzinfo=None),
       "status": "paper",
     }
 
@@ -76,9 +76,7 @@ def execute_trade(market, signal):
       f"Reason: {signal['reason']}"
     )
 
-  # Log to database (best-effort; never block or fail the trade)
-  try:
-    log_trade(trade_data)
-  except Exception as e:
-    logger.error(f"Failed to log trade to database: {e}")
+  saved = log_trade(trade_data)
+  if not saved:
+    logger.error("Trade was NOT saved to database - check logs above for cause")
   return True
