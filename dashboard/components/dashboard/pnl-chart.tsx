@@ -149,6 +149,7 @@ export function PnlChart() {
             <ChartTooltip
               content={
                 <ChartTooltipContent
+                  labelFormatter={(label) => label}
                   formatter={(value) => [`$${Number(value).toFixed(2)}`, "P&L"]}
                 />
               }

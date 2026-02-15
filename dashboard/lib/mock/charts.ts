@@ -20,9 +20,23 @@ function fmtDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
-function fmtHour(d: Date) {
-  return d.toISOString().slice(11, 16);
+/** Local HH:MM like TradingView (e.g. 09:30, 14:35). */
+export function fmtTimeHHMM(d: Date) {
+  const h = d.getHours();
+  const m = d.getMinutes();
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
+
+/** Short date for multi-day (e.g. Feb 15). */
+function fmtDateShort(d: Date) {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** TradingView-style: date + time (e.g. Feb 15, 09:00). */
+function fmtDateWithTime(d: Date) {
+  return `${fmtDateShort(d)}, ${fmtTimeHHMM(d)}`;
+}
+
 
 /** Generate balance series that varies by timeframe (mock). */
 export function getBalanceOverTime(range: ChartTimeRange): BalancePoint[] {
@@ -33,11 +47,11 @@ export function getBalanceOverTime(range: ChartTimeRange): BalancePoint[] {
 
   if (range === "1D") {
     const start = addHours(now, -24);
-    for (let i = 0; i <= 24; i += 2) {
+    for (let i = 0; i <= 24; i += 1) {
       const t = addHours(start, i);
       const x = i / 24;
       const noise = Math.sin(x * Math.PI * 2) * 120 + x * 200 + Math.sin(i * 0.7) * 15;
-      points.push({ date: fmtHour(t), balance: Math.round(base + noise) });
+      points.push({ date: fmtTimeHHMM(t), balance: Math.round(base + noise) });
     }
     return points;
   }
@@ -48,9 +62,10 @@ export function getBalanceOverTime(range: ChartTimeRange): BalancePoint[] {
 
   for (let i = 0; i <= days; i += step) {
     const d = addDays(start, i);
+    d.setHours(9, 0, 0, 0);
     const t = i / days;
     const trend = t * 280 + Math.sin(t * Math.PI * 3) * 60 + Math.sin(i * 0.5) * 12;
-    points.push({ date: fmtDate(d), balance: Math.round(base + trend) });
+    points.push({ date: fmtDateWithTime(d), balance: Math.round(base + trend) });
   }
 
   if (points.length > 0) {

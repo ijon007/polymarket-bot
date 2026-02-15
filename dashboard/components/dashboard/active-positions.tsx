@@ -134,7 +134,7 @@ export function ActivePositions({ trades, filter }: ActivePositionsProps) {
           </Button>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-3">
+      <div className="flex-1 overflow-y-auto scrollbar-thin px-4 pb-3">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border text-left text-[0.6rem]">

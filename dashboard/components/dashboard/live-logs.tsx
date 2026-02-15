@@ -61,7 +61,7 @@ export function LiveLogs({ logs, follow = true }: LiveLogsProps) {
       </div>
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-3"
+        className="flex-1 overflow-y-auto scrollbar-thin overflow-x-hidden px-4 pb-3"
       >
         {filtered.length === 0 ? (
           <p className="py-4 text-center text-[0.7rem] text-muted-foreground">

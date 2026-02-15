@@ -34,13 +34,10 @@ export function StatusBar({
       )}
     >
       <span className="tabular-nums">Last updated {lastUpdated > 0 ? relativeTime(lastUpdated) : "—"}</span>
-      {openPositions !== undefined && (
-        <span>· Open positions: <span className="tabular-nums font-medium text-foreground">{openPositions}</span></span>
-      )}
       <Button
         variant="ghost"
         size="sm"
-        className="h-5 gap-1 px-1.5 text-muted-foreground hover:text-foreground"
+        className="gap-1 text-muted-foreground hover:text-foreground"
         onClick={onRefresh}
         disabled={isRefreshing}
         aria-label="Refresh data"

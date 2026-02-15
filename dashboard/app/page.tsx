@@ -11,7 +11,6 @@ import {
   PnlChart,
   EquityChart,
   CardCorners,
-  StatusBar,
 } from "@/components/dashboard";
 import type { DashboardFilter } from "@/components/dashboard/date-range-bar";
 import { Toast } from "@/components/ui/toast";
@@ -58,22 +57,19 @@ export default function Page() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background font-mono transition-colors duration-200">
-      <DashboardHeader status={mockSystemStatus} />
+      <DashboardHeader
+        status={mockSystemStatus}
+        lastUpdated={lastUpdated}
+        onRefresh={refreshData}
+        isRefreshing={isRefreshing}
+        openPositions={openPositions}
+      />
 
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
-        <div className="flex shrink-0 items-center justify-end gap-2">
-          <StatusBar
-            lastUpdated={lastUpdated}
-            onRefresh={refreshData}
-            isRefreshing={isRefreshing}
-            openPositions={openPositions}
-          />
-        </div>
-
         {/* Layout: left sidebar | right (Charts, Positions, Logs) — no page overflow */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden lg:grid-cols-12">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden lg:grid-cols-12">
           {/* Left column: Account card, Bot Analytics, System Status */}
-          <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto lg:col-span-3">
+          <aside className="flex min-h-0 flex-col gap-2 overflow-y-auto lg:col-span-3">
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
               <AccountSummary account={mockAccount} />
@@ -89,8 +85,8 @@ export default function Page() {
           </aside>
 
           {/* Right column: fixed-height charts, then Positions + Logs (Logs scrollable) */}
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden lg:col-span-9">
-            <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden lg:col-span-9">
+            <div className="grid shrink-0 grid-cols-1 gap-2 sm:grid-cols-2">
               <div className="h-[350px] min-w-0">
                 <PnlChart />
               </div>
@@ -98,14 +94,14 @@ export default function Page() {
                 <EquityChart />
               </div>
             </div>
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-4">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-4">
               <div className="relative flex min-h-0 flex-col overflow-hidden rounded border border-border/60 bg-card shadow-sm sm:col-span-2">
                 <CardCorners />
                 <div className="min-h-0 flex-1 overflow-auto">
                   <ActivePositions trades={mockTrades} filter={defaultFilter} />
                 </div>
               </div>
-              <div className="flex min-h-0 flex-col overflow-hidden rounded border border-border/60 bg-card shadow-sm sm:col-span-2">
+              <div className="relative flex min-h-0 flex-col overflow-hidden rounded border border-border/60 bg-card shadow-sm sm:col-span-2">
                 <CardCorners />
                 <LiveLogs logs={mockLogs} follow />
               </div>
