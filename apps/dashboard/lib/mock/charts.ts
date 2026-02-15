@@ -2,7 +2,7 @@ import type { PortfolioDataPoint, PositionPerformancePoint } from "@/types/dashb
 
 export type BalancePoint = { date: string; balance: number };
 
-export type ChartTimeRange = "1D" | "7D" | "30D" | "90D" | "1M" | "3M";
+export type ChartTimeRange = "1H" | "4H" | "1D" | "7D" | "30D" | "90D";
 
 function addDays(d: Date, n: number) {
   const out = new Date(d);
@@ -46,6 +46,22 @@ export function getBalanceOverTime(range: ChartTimeRange): BalancePoint[] {
   const base = 980;
   const volatility = 80;
 
+  if (range === "1H") {
+    const start = addHours(now, -1);
+    for (let i = 0; i <= 6; i += 1) {
+      const t = new Date(start.getTime() + (i * 10) * 60 * 1000);
+      points.push({ date: fmtTimeHHMM(t), balance: Math.round(base + i * 8) });
+    }
+    return points;
+  }
+  if (range === "4H") {
+    const start = addHours(now, -4);
+    for (let i = 0; i <= 12; i += 1) {
+      const t = new Date(start.getTime() + (i * 20) * 60 * 1000);
+      points.push({ date: fmtTimeHHMM(t), balance: Math.round(base + i * 12) });
+    }
+    return points;
+  }
   if (range === "1D") {
     const start = addHours(now, -24);
     for (let i = 0; i <= 24; i += 1) {
@@ -57,8 +73,8 @@ export function getBalanceOverTime(range: ChartTimeRange): BalancePoint[] {
     return points;
   }
 
-  const days = range === "7D" || range === "1M" ? (range === "7D" ? 7 : 30) : range === "30D" ? 30 : 90;
-  const step = range === "3M" ? 3 : 1;
+  const days = range === "7D" ? 7 : range === "30D" ? 30 : 90;
+  const step = range === "90D" ? 3 : 1;
   const start = addDays(now, -days);
 
   for (let i = 0; i <= days; i += step) {

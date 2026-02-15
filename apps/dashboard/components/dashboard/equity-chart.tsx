@@ -1,9 +1,9 @@
 "use client";
 
-import { useId, useMemo, useRef, useState, useCallback } from "react";
+import { useId, useMemo, useState, useCallback } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
   type ChartConfig,
@@ -36,23 +36,25 @@ function toSec(ts: number): number {
   return ts >= 1e12 ? ts / 1000 : ts;
 }
 
-/** Build equity-over-time from settled trades and current equity, filtered by range. */
+/** Build equity-over-time from settled trades and current equity, filtered by range. Step shape: flat until each trade then step. */
 function buildEquitySeries(
   settled: { settled_at?: number; actual_profit?: number }[],
   currentEquity: number,
   timeRange: ChartTimeRange
-): BalancePoint[] {
+): (BalancePoint & { timestamp: number })[] {
   const now = Date.now() / 1000;
   const nowDate = new Date();
-  const is1D = timeRange === "1D";
+  const hourRanges = timeRange === "1H" || timeRange === "4H" || timeRange === "1D";
   let rangeStartSec: number;
-  if (is1D) {
-    const rangeStartDate = addHours(nowDate, -24);
-    rangeStartSec = rangeStartDate.getTime() / 1000;
+  if (timeRange === "1H") {
+    rangeStartSec = addHours(nowDate, -1).getTime() / 1000;
+  } else if (timeRange === "4H") {
+    rangeStartSec = addHours(nowDate, -4).getTime() / 1000;
+  } else if (timeRange === "1D") {
+    rangeStartSec = addHours(nowDate, -24).getTime() / 1000;
   } else {
-    const days = timeRange === "7D" || timeRange === "1M" ? (timeRange === "7D" ? 7 : 30) : timeRange === "30D" ? 30 : 90;
-    const rangeStartDate = addDays(nowDate, -days);
-    rangeStartSec = rangeStartDate.getTime() / 1000;
+    const days = timeRange === "7D" ? 7 : timeRange === "30D" ? 30 : 90;
+    rangeStartSec = addDays(nowDate, -days).getTime() / 1000;
   }
 
   const sorted = [...settled].sort((a, b) => (a.settled_at ?? 0) - (b.settled_at ?? 0));
@@ -61,24 +63,26 @@ function buildEquitySeries(
     .reduce((s, t) => s + (t.actual_profit ?? 0), 0);
   const startBalance = INITIAL_BALANCE + pnlBeforeRange;
 
-  let cumulative = INITIAL_BALANCE;
-  const points: { ts: number; balance: number }[] = [];
-  for (const t of sorted) {
-    const st = toSec(t.settled_at ?? 0);
-    cumulative += t.actual_profit ?? 0;
-    if (st >= rangeStartSec && st <= now) points.push({ ts: st, balance: cumulative });
-  }
-
   const formatLabel = (tsSec: number) => {
     const d = new Date(tsSec * 1000);
-    return is1D ? fmtTimeHHMM(d) : fmtDateWithTime(d);
+    return hourRanges ? fmtTimeHHMM(d) : fmtDateWithTime(d);
   };
 
   type Point = BalancePoint & { timestamp: number };
   const result: Point[] = [
     { date: formatLabel(rangeStartSec), balance: startBalance, timestamp: rangeStartSec },
   ];
-  for (const p of points) result.push({ date: formatLabel(p.ts), balance: p.balance, timestamp: p.ts });
+  let cumulative = startBalance;
+  for (const t of sorted) {
+    const st = toSec(t.settled_at ?? 0);
+    if (st < rangeStartSec || st > now) {
+      cumulative += t.actual_profit ?? 0;
+      continue;
+    }
+    result.push({ date: formatLabel(st), balance: cumulative, timestamp: st });
+    cumulative += t.actual_profit ?? 0;
+    result.push({ date: formatLabel(st), balance: cumulative, timestamp: st });
+  }
   result.push({ date: formatLabel(now), balance: currentEquity, timestamp: now });
   return result;
 }
@@ -87,25 +91,48 @@ const chartConfig = {
   balance: { label: "Equity", color: "var(--color-positive)" },
 } satisfies ChartConfig;
 
-function interpolate(
-  data: { date: string; balance: number }[],
-  xRatio: number
-): { date: string; balance: number } {
-  if (!data.length) return { date: "", balance: 0 };
-  if (data.length === 1) return { date: data[0].date, balance: data[0].balance };
-  const index = Math.max(0, Math.min(xRatio * (data.length - 1), data.length - 1));
-  const i = Math.floor(index);
-  const j = Math.min(i + 1, data.length - 1);
-  const t = index - i;
-  const balance = data[i].balance + t * (data[j].balance - data[i].balance);
-  const date = t < 0.5 ? data[i].date : data[j].date;
-  return { date, balance };
+/** Step lookup: balance at the latest point with timestamp <= ts. */
+function stepAt(
+  data: { date: string; balance: number; timestamp: number }[],
+  ts: number
+): { date: string; balance: number } | null {
+  if (!data.length) return null;
+  let i = data.length - 1;
+  while (i >= 0 && data[i].timestamp > ts) i--;
+  const p = data[Math.max(0, i)];
+  return { date: p.date, balance: p.balance };
+}
+
+function EquityTooltipContent({
+  active,
+  payload,
+  balanceData,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload?: { timestamp?: number } }>;
+  balanceData: { date: string; balance: number; timestamp: number }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const first = payload[0];
+  const ts =
+    first && typeof first === "object" && "payload" in first && first.payload
+      ? (first.payload as { timestamp?: number }).timestamp
+      : undefined;
+  if (ts == null) return null;
+  const step = stepAt(balanceData, ts);
+  if (!step) return null;
+  return (
+    <div className="rounded border border-border/60 bg-card px-2 py-1.5 text-xs shadow-lg">
+      <div className="text-muted-foreground">{step.date}</div>
+      <div className="font-semibold tabular-nums text-foreground">
+        ${step.balance.toFixed(2)}
+      </div>
+    </div>
+  );
 }
 
 export function EquityChart() {
-  const [timeRange, setTimeRange] = useState<ChartTimeRange>("30D");
-  const [hover, setHover] = useState<{ x: number; value: number; date: string } | null>(null);
-  const chartWrapRef = useRef<HTMLDivElement>(null);
+  const [timeRange, setTimeRange] = useState<ChartTimeRange>("1H");
   const gradientId = useId().replace(/:/g, "");
 
   const settled = useQuery(api.trades.listSettled, {});
@@ -115,8 +142,15 @@ export function EquityChart() {
   const balanceData = useMemo(() => {
     if (settled === undefined) {
       const now = new Date();
-      const start = timeRange === "1D" ? addHours(now, -24) : addDays(now, timeRange === "7D" || timeRange === "1M" ? (timeRange === "7D" ? -7 : -30) : timeRange === "30D" ? -30 : -90);
-      const fmt = timeRange === "1D" ? fmtTimeHHMM : fmtDateWithTime;
+      const start =
+        timeRange === "1H"
+          ? addHours(now, -1)
+          : timeRange === "4H"
+            ? addHours(now, -4)
+            : timeRange === "1D"
+              ? addHours(now, -24)
+              : addDays(now, timeRange === "7D" ? -7 : timeRange === "30D" ? -30 : -90);
+      const fmt = timeRange === "1H" || timeRange === "4H" || timeRange === "1D" ? fmtTimeHHMM : fmtDateWithTime;
       const startSec = start.getTime() / 1000;
       const nowSec = now.getTime() / 1000;
       return [
@@ -139,16 +173,14 @@ export function EquityChart() {
   }, [balanceData]);
 
   const xTicks = useMemo(() => {
-    const n = displayData.length;
-    if (n === 0) return undefined;
-    const numTicks = timeRange === "1D" ? 12 : timeRange === "7D" || timeRange === "1M" ? 10 : 10;
-    const indices = Array.from({ length: numTicks }, (_, i) =>
-      i === numTicks - 1 ? n - 1 : Math.round((i / (numTicks - 1)) * (n - 1))
+    if (!displayData.length) return undefined;
+    const min = Math.min(...displayData.map((d) => d.timestamp).filter((v): v is number => typeof v === "number"));
+    const max = Math.max(...displayData.map((d) => d.timestamp).filter((v): v is number => typeof v === "number"));
+    const numTicks =
+      timeRange === "1H" || timeRange === "4H" ? 6 : timeRange === "1D" ? 8 : timeRange === "7D" ? 7 : 6;
+    return Array.from({ length: numTicks }, (_, i) =>
+      min + (i / (numTicks - 1)) * (max - min)
     );
-    const timestamps = [...new Set(indices)]
-      .map((i) => displayData[i]?.timestamp)
-      .filter((v): v is number => typeof v === "number");
-    return timestamps.sort((a, b) => a - b);
   }, [displayData, timeRange]);
 
   const yDomain = useMemo(() => {
@@ -172,7 +204,9 @@ export function EquityChart() {
   const formatTick = useCallback(
     (ts: number) => {
       const d = new Date(ts * 1000);
-      return timeRange === "1D" ? fmtTimeHHMM(d) : fmtDateWithTime(d);
+      return timeRange === "1H" || timeRange === "4H" || timeRange === "1D"
+        ? fmtTimeHHMM(d)
+        : fmtDateWithTime(d);
     },
     [timeRange]
   );
@@ -183,33 +217,13 @@ export function EquityChart() {
   const changePct = firstVal ? (change / firstVal) * 100 : 0;
   const isPositive = change >= 0;
 
-  const onChartMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const el = chartWrapRef.current;
-      if (!el || !displayData.length) return;
-      const rect = el.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const w = rect.width;
-      if (x < 0 || x > w) {
-        setHover(null);
-        return;
-      }
-      const xRatio = x / w;
-      const { date, balance } = interpolate(balanceData, xRatio);
-      setHover({ x, value: balance, date });
-    },
-    [balanceData, displayData.length]
-  );
-
-  const onChartMouseLeave = useCallback(() => setHover(null), []);
-
   return (
     <div className="relative flex h-full flex-col overflow-hidden rounded border border-border/60 bg-card shadow-sm transition-shadow duration-200 hover:shadow-md">
       <CardCorners />
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 px-4 py-3">
         <span className="text-sm font-medium text-foreground">Total account equity</span>
         <div className="flex rounded border border-border/60 bg-muted/30 p-0.5">
-          {(["1D", "7D", "30D", "90D", "1M", "3M"] as const).map((r) => (
+          {(["1H", "4H", "1D", "7D", "30D", "90D"] as const).map((r) => (
             <button
               key={r}
               type="button"
@@ -237,32 +251,7 @@ export function EquityChart() {
           {changePct.toFixed(2)}% (${change.toFixed(2)})
         </span>
       </div>
-      <div
-        ref={chartWrapRef}
-        className="relative h-full min-h-0 w-full cursor-crosshair px-2 pb-4"
-        onMouseMove={onChartMouseMove}
-        onMouseLeave={onChartMouseLeave}
-      >
-        {hover && (
-          <>
-            <div
-              className="pointer-events-none absolute top-0 bottom-8 z-10 w-px border-l border-dashed border-foreground/50"
-              style={{ left: hover.x }}
-            />
-            <div
-              className="pointer-events-none absolute z-10 rounded border border-border/60 bg-card px-2 py-1.5 text-xs shadow-lg"
-              style={{
-                left: Math.min(hover.x + 10, (chartWrapRef.current?.offsetWidth ?? 400) - 90),
-                top: 8,
-              }}
-            >
-              <div className="text-muted-foreground">{hover.date}</div>
-              <div className="font-semibold tabular-nums text-foreground">
-                ${hover.value.toFixed(2)}
-              </div>
-            </div>
-          </>
-        )}
+      <div className="relative h-full min-h-0 w-full px-2 pb-4">
         <ChartContainer config={chartConfig} className="h-full min-h-[180px] w-full [&_.recharts-wrapper]:block!">
           <AreaChart data={displayData} margin={{ top: 12, right: 16, bottom: 28, left: 4 }}>
             <defs>
@@ -272,6 +261,13 @@ export function EquityChart() {
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
+            <Tooltip
+              content={(props) => (
+                <EquityTooltipContent {...props} balanceData={balanceData} />
+              )}
+              cursor={{ stroke: "var(--foreground)", strokeWidth: 1, strokeDasharray: "4 4" }}
+              isAnimationActive={false}
+            />
             <XAxis
               dataKey="timestamp"
               type="number"
@@ -296,11 +292,12 @@ export function EquityChart() {
             />
             <Area
               dataKey="value"
-              type="monotone"
+              type="stepAfter"
               stroke="var(--color-positive)"
               strokeWidth={2}
               fill={`url(#equityFill-${gradientId})`}
               dot={false}
+              baseValue={displayData[0]?.value ?? INITIAL_BALANCE}
               isAnimationActive
               animationDuration={400}
             />

@@ -11,7 +11,6 @@ export { PortfolioChart } from "./portfolio-chart";
 export { PositionChart } from "./position-chart";
 export { MetricCard } from "./metric-cards";
 export { DateRangeBar } from "./date-range-bar";
-export { BalanceChart } from "./balance-chart";
 export { PnlChart } from "./pnl-chart";
 export { EquityChart } from "./equity-chart";
 export { WinRateHeatmap } from "./win-rate-heatmap";

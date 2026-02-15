@@ -13,7 +13,7 @@ import { CalendarBlankIcon, FunnelIcon, CheckIcon } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils";
 import type { ChartTimeRange } from "@/lib/mock/charts";
 
-const PRESETS: ChartTimeRange[] = ["1D", "7D", "30D", "90D", "1M", "3M"];
+const PRESETS: ChartTimeRange[] = ["1H", "4H", "1D", "7D", "30D", "90D"];
 
 export interface DashboardFilter {
   positionSide: "all" | "yes" | "no";

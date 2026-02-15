@@ -31,6 +31,16 @@ function formatExecutedAt(ts: number): string {
   return new Date(toMs(ts)).toISOString().slice(0, 16).replace("T", " ");
 }
 
+function formatExecutedAtLocal(ts: number): string {
+  const d = new Date(toMs(ts));
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${day} ${h}:${min}`;
+}
+
 function computeStreak(history: StreakTradeEntry[]): { currentStreak: number; streakType: "W" | "L" } {
   if (history.length === 0) return { currentStreak: 0, streakType: "W" };
   const last = history[history.length - 1].outcome;
@@ -75,12 +85,14 @@ export function useDashboardAccount(initialBalance?: number): AccountSummary {
 export function useStreakFromConvex(): StreakGraph {
   const settled = useQuery(api.trades.dashboardSettledForStreak, { limit: 40 });
   if (settled === undefined) return mockStreakGraph;
-  const history: StreakTradeEntry[] = settled.map((t) => ({
-    outcome: t.status === "won" ? ("won" as const) : ("lost" as const),
-    pnl: t.actual_profit ?? 0,
-    executedAt: formatExecutedAt(t.settled_at ?? t.executed_at),
-    side: mapSide(t.side),
-  }));
+  const history: StreakTradeEntry[] = [...settled]
+    .reverse()
+    .map((t) => ({
+      outcome: t.status === "won" ? ("won" as const) : ("lost" as const),
+      pnl: t.actual_profit ?? 0,
+      executedAt: formatExecutedAtLocal(t.settled_at ?? t.executed_at),
+      side: mapSide(t.side),
+    }));
   const { currentStreak, streakType } = computeStreak(history);
   return { history, currentStreak, streakType };
 }

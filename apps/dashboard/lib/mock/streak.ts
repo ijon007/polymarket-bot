@@ -12,6 +12,15 @@ function computeStreak(history: StreakTradeEntry[]): { currentStreak: number; st
   return { currentStreak: count, streakType: last === "won" ? "W" : "L" };
 }
 
+function formatLocal(d: Date): string {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${day} ${h}:${min}`;
+}
+
 function makeEntry(outcome: TradeOutcome, pnl: number, i: number): StreakTradeEntry {
   const minsAgo = (TOTAL - 1 - i) * 5;
   const d = new Date();
@@ -19,7 +28,7 @@ function makeEntry(outcome: TradeOutcome, pnl: number, i: number): StreakTradeEn
   return {
     outcome,
     pnl,
-    executedAt: d.toISOString().slice(0, 16).replace("T", " "),
+    executedAt: formatLocal(d),
     side: i % 2 === 0 ? "UP" : "DOWN",
   };
 }

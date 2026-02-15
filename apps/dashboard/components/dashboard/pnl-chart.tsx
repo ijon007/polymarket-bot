@@ -33,7 +33,7 @@ function interpolate(
 }
 
 export function PnlChart() {
-  const [timeRange, setTimeRange] = useState<ChartTimeRange>("30D");
+  const [timeRange, setTimeRange] = useState<ChartTimeRange>("1H");
   const [hover, setHover] = useState<{ x: number; pnl: number; date: string } | null>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
   const gradientId = useId().replace(/:/g, "");
@@ -75,7 +75,7 @@ export function PnlChart() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 px-4 py-3">
         <span className="text-sm font-medium text-foreground">P&L</span>
         <div className="flex rounded border border-border/60 bg-muted/30 p-0.5">
-          {(["1D", "7D", "30D", "90D", "1M", "3M"] as const).map((r) => (
+          {(["1H", "4H", "1D", "7D", "30D", "90D"] as const).map((r) => (
             <button
               key={r}
               type="button"

@@ -79,10 +79,10 @@ function TradeTooltip({ entry }: { entry: StreakTradeEntry | null }) {
 
 export function StreakCard({ data }: StreakCardProps) {
   const { history, currentStreak, streakType } = data;
-  const slice = history.slice(-TOTAL);
+  const slice = history.slice(-TOTAL); // already oldest … newest
   const padded: (StreakTradeEntry | null)[] = [
-    ...Array(TOTAL - slice.length).fill(null),
     ...slice,
+    ...Array(TOTAL - slice.length).fill(null),
   ];
 
   return (
@@ -99,7 +99,7 @@ export function StreakCard({ data }: StreakCardProps) {
             </span>
           )}
         </div>
-        <div className="mt-2 flex min-w-0 w-full justify-end">
+        <div className="mt-2 flex min-w-0 w-full justify-start">
           <div
             className="grid w-full max-w-full shrink-0"
             style={{
@@ -116,7 +116,7 @@ export function StreakCard({ data }: StreakCardProps) {
             ))}
           </div>
         </div>
-        <p className="mt-1.5 text-right text-[0.5rem] text-muted-foreground sm:text-[0.55rem]">
+        <p className="mt-1.5 text-left text-[0.5rem] text-muted-foreground sm:text-[0.55rem]">
           1 square = 1 trade · older → newer
         </p>
       </div>
