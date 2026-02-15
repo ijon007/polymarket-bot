@@ -149,15 +149,7 @@ export function EquityChart() {
                 `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`
               }
               domain={["dataMin - 20", "dataMax + 20"]}
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(label) => label}
-                  formatter={(value) => [`$${Number(value).toFixed(2)}`, "Equity"]}
-                />
-              }
-            />
+            />=
             <Area
               dataKey="value"
               type="monotone"

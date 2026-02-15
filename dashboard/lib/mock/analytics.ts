@@ -1,5 +1,6 @@
 import type { BotAnalytics, TradeRow } from "@/types/dashboard";
 
+// From bot: Trade table counts (settled = won+lost, pending = paper); best/worst = max/min actual_profit
 export const mockAnalytics: BotAnalytics = {
   totalTrades: 194,
   settled: 178,
@@ -9,6 +10,7 @@ export const mockAnalytics: BotAnalytics = {
   worstTrade: -22.50,
 };
 
+// Bot only trades btc-updown-5m-{window_start_ts}; status in DB is paper | won | lost (display won/lost as "settled")
 export const mockTrades: TradeRow[] = [
   {
     id: 194,
@@ -23,12 +25,12 @@ export const mockTrades: TradeRow[] = [
   },
   {
     id: 193,
-    market: "eth-updown-5m-1771083000",
-    question: "Will ETH go up in the next 5 min?",
+    market: "btc-updown-5m-1771083000",
+    question: "Will BTC go up in the next 5 min?",
     side: "NO",
     price: 0.39,
     size: 10.0,
-    pnl: 6.10,
+    pnl: 6.1,
     status: "settled",
     executedAt: "2026-02-15 13:05:48",
   },
@@ -45,12 +47,12 @@ export const mockTrades: TradeRow[] = [
   },
   {
     id: 191,
-    market: "sol-updown-5m-1771082400",
-    question: "Will SOL go up in the next 5 min?",
+    market: "btc-updown-5m-1771082400",
+    question: "Will BTC go up in the next 5 min?",
     side: "YES",
     price: 0.48,
     size: 10.0,
-    pnl: 5.20,
+    pnl: 5.2,
     status: "settled",
     executedAt: "2026-02-15 13:00:30",
   },
@@ -61,14 +63,14 @@ export const mockTrades: TradeRow[] = [
     side: "YES",
     price: 0.51,
     size: 10.0,
-    pnl: 4.90,
+    pnl: 4.9,
     status: "settled",
     executedAt: "2026-02-15 12:55:29",
   },
   {
     id: 189,
-    market: "eth-updown-5m-1771081800",
-    question: "Will ETH go up in the next 5 min?",
+    market: "btc-updown-5m-1771081200",
+    question: "Will BTC go up in the next 5 min?",
     side: "NO",
     price: 0.42,
     size: 10.0,
@@ -78,23 +80,23 @@ export const mockTrades: TradeRow[] = [
   },
   {
     id: 188,
-    market: "btc-updown-1h-1771081200",
-    question: "Will BTC go up in the next 1 hour?",
+    market: "btc-updown-5m-1771080600",
+    question: "Will BTC go up in the next 5 min?",
     side: "YES",
     price: 0.58,
     size: 10.0,
-    pnl: 4.20,
+    pnl: 4.2,
     status: "settled",
     executedAt: "2026-02-15 12:50:15",
   },
   {
     id: 187,
-    market: "avax-updown-5m-1771081200",
-    question: "Will AVAX go up in the next 5 min?",
+    market: "btc-updown-5m-1771080300",
+    question: "Will BTC go up in the next 5 min?",
     side: "YES",
     price: 0.46,
     size: 10.0,
-    pnl: 5.40,
+    pnl: 5.4,
     status: "settled",
     executedAt: "2026-02-15 12:50:12",
   },

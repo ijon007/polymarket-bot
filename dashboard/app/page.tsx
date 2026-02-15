@@ -58,7 +58,6 @@ export default function Page() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background font-mono transition-colors duration-200">
       <DashboardHeader
-        status={mockSystemStatus}
         lastUpdated={lastUpdated}
         onRefresh={refreshData}
         isRefreshing={isRefreshing}

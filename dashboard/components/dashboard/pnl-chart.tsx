@@ -146,14 +146,6 @@ export function PnlChart() {
               tickFormatter={(v: number) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`}
               domain={["dataMin - 20", "dataMax + 20"]}
             />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(label) => label}
-                  formatter={(value) => [`$${Number(value).toFixed(2)}`, "P&L"]}
-                />
-              }
-            />
             <Area
               dataKey="value"
               type="monotone"

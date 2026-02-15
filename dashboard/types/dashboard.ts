@@ -18,9 +18,9 @@ export interface ConnectionStatus {
 
 export interface SystemStatus {
   engineState: EngineState;
-  connections: ConnectionStatus[];
+  /** Optional: Polymarket API, Database, RTDS – shown in header when provided */
+  connections?: ConnectionStatus[];
   uptime: string;
-  memory: string;
   scanInterval: number;
 }
 
@@ -42,11 +42,11 @@ export interface ScanConfig {
 
 export interface AccountSummary {
   equity: number;
-  bankroll: number;
+  winRate: number;
   totalPnl: number;
   totalPnlPct: number;
   realizedPnl: number;
-  unrealizedPnl: number;
+  todayPnl: number;
 }
 
 // ---------------------------------------------------------------------------

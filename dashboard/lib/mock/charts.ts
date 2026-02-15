@@ -38,6 +38,7 @@ function fmtDateWithTime(d: Date) {
 }
 
 
+// Bot has no balance_history; only get_current_balance() at runtime. Chart data is mock until we add history.
 /** Generate balance series that varies by timeframe (mock). */
 export function getBalanceOverTime(range: ChartTimeRange): BalancePoint[] {
   const now = new Date();

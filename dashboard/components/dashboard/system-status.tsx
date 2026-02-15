@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import type { SystemStatus as SystemStatusType } from "@/types/dashboard";
 
@@ -5,7 +6,7 @@ interface SystemStatusProps {
   status: SystemStatusType;
 }
 
-const engineVariant = (s: SystemStatusType["engineState"]) => {
+const statusVariant = (s: SystemStatusType["engineState"]) => {
   switch (s) {
     case "SCANNING": return "default" as const;
     case "IDLE": return "secondary" as const;
@@ -13,23 +14,36 @@ const engineVariant = (s: SystemStatusType["engineState"]) => {
   }
 };
 
+const statusLabel: Record<SystemStatusType["engineState"], string> = {
+  SCANNING: "Scanning",
+  IDLE: "Idle",
+  ERROR: "Error",
+  STOPPED: "Stopped",
+};
+
 export function SystemStatus({ status }: SystemStatusProps) {
   const rows: { label: string; value: React.ReactNode }[] = [
     {
-      label: "Engine",
+      label: "Status",
       value: (
-        <Badge variant={engineVariant(status.engineState)} className="text-[0.5rem]">
-          {status.engineState}
+        <Badge variant={statusVariant(status.engineState)} className="text-[0.5rem]">
+          {statusLabel[status.engineState]}
         </Badge>
       ),
     },
-    {
-      label: "MCP Links",
-      value: `${status.connections.filter((c) => c.connected).length}/${status.connections.length}`,
-    },
     { label: "Uptime", value: status.uptime },
-    { label: "Memory", value: status.memory },
-    { label: "Interval", value: `${status.scanInterval}s` },
+    { label: "Scan interval", value: `${status.scanInterval}s` },
+    ...(status.connections ?? []).map((conn) => ({
+      label: conn.label,
+      value: (
+        <span
+          className={cn(
+            "inline-block size-1.5 shrink-0 rounded-full",
+            conn.connected ? "bg-positive" : "bg-destructive"
+          )}
+        />
+      ),
+    })),
   ];
 
   return (

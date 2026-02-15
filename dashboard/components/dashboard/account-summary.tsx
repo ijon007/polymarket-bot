@@ -14,11 +14,7 @@ export function AccountSummary({ account }: AccountSummaryProps) {
 
   return (
     <div className="flex h-full flex-col justify-between p-4">
-      <span className="text-[0.65rem] font-medium uppercase text-muted-foreground">
-        Account
-      </span>
-
-      <div className="mt-2">
+      <div>
         <p className="text-[0.6rem] uppercase text-muted-foreground">Equity</p>
         <p className="text-3xl font-semibold tabular-nums leading-tight">
           {fmt(account.equity)}
@@ -27,8 +23,8 @@ export function AccountSummary({ account }: AccountSummaryProps) {
 
       <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
         <div>
-          <p className="text-[0.6rem] uppercase text-muted-foreground">Bankroll</p>
-          <p className="text-xs tabular-nums">{fmt(account.bankroll)}</p>
+          <p className="text-[0.6rem] uppercase text-muted-foreground">Win rate</p>
+          <p className="text-xs tabular-nums">{account.winRate.toFixed(1)}%</p>
         </div>
         <div>
           <p className="text-[0.6rem] uppercase text-muted-foreground">Total P&L</p>
@@ -46,9 +42,9 @@ export function AccountSummary({ account }: AccountSummaryProps) {
           </p>
         </div>
         <div>
-          <p className="text-[0.6rem] uppercase text-muted-foreground">Unrealized</p>
-          <p className={cn("text-xs tabular-nums", account.unrealizedPnl >= 0 ? "text-positive" : "text-destructive")}>
-            {fmt(account.unrealizedPnl)}
+          <p className="text-[0.6rem] uppercase text-muted-foreground">Today P&L (24h)</p>
+          <p className={cn("text-xs tabular-nums", account.todayPnl >= 0 ? "text-positive" : "text-destructive")}>
+            {fmt(account.todayPnl)}
           </p>
         </div>
       </div>
