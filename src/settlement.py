@@ -184,9 +184,10 @@ def settle_trades():
     settled_any = False
 
     for slug in slugs:
-      resolution = resolve_outcome_via_rtds(slug)
+      # Prefer Polymarket API (authoritative); use RTDS only when not resolved yet
+      resolution = check_market_resolution(slug)
       if not resolution["resolved"]:
-        resolution = check_market_resolution(slug)
+        resolution = resolve_outcome_via_rtds(slug)
       if not resolution["resolved"]:
         continue
 

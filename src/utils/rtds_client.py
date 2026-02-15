@@ -146,8 +146,9 @@ def get_latest_btc_usd() -> Optional[float]:
 
 def get_btc_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
   """
-  Return BTC price at or just after the given Unix timestamp (seconds).
-  Uses rolling buffer; returns None if that time is outside the buffer (e.g. before we connected).
+  Return BTC price at the given Unix timestamp (seconds): last tick with timestamp <= T.
+  Matches oracle semantics (price that was current at that moment). Returns None if we
+  have no tick at or before T (e.g. we connected after that time).
   """
   if ts_unix_seconds <= 0:
     return None
@@ -155,7 +156,9 @@ def get_btc_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
   with _lock:
     if not _buffer:
       return None
+    last_at_or_before = None
     for t, v in _buffer:
-      if t >= ts_ms:
-        return v
-    return _buffer[-1][1] if _buffer else None
+      if t > ts_ms:
+        break
+      last_at_or_before = v
+    return last_at_or_before

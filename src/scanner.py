@@ -4,6 +4,8 @@ import requests
 from datetime import datetime, timezone
 from loguru import logger
 
+from src.utils.price_feed import get_btc_price_at_timestamp
+
 GAMMA_API = "https://gamma-api.polymarket.com"
 _REQUEST_RETRIES = 3
 _REQUEST_RETRY_DELAY = 2
@@ -150,7 +152,12 @@ def fetch_btc_5min_market():
           token_ids["yes"] = ids[0].strip()
           token_ids["no"] = ids[1].strip()
       
-      logger.info(f"✅ ACTIVE: {slug} | YES: {yes_price}, NO: {no_price} | {seconds_left:.0f}s left")
+      start_price = get_btc_price_at_timestamp(window_ts)
+      price_to_beat = f"${start_price:,.2f}" if start_price is not None else "N/A"
+      logger.info(
+        f"✅ ACTIVE: {slug} | YES: {yes_price}, NO: {no_price} | "
+        f"Start Price/Price to Beat: {price_to_beat} | {seconds_left:.0f}s left"
+      )
 
       return {
         "condition_id": market.get("conditionId"),

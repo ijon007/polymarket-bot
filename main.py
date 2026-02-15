@@ -40,6 +40,9 @@ def main():
   from src.utils.rtds_client import start as rtds_start
   rtds_start()
 
+  bot_start_time = time.time()
+  logger.info(f"Bot start time (for window gating): {bot_start_time:.0f}")
+
   logger.log("BALANCE", f"Current Balance: ${get_current_balance():,.2f}")
 
   opportunities_found = 0
@@ -52,6 +55,17 @@ def main():
       if not market:
         logger.info("No active market (between rounds)")
         time.sleep(30)
+        continue
+
+      # Force skip if this window started before we started (we don't have true start price)
+      window_start_ts = market.get("window_start_ts")
+      if window_start_ts is not None and window_start_ts < bot_start_time:
+        logger.warning(
+          f"SKIP: window started before bot (start_ts={window_start_ts:.0f} < bot_start={bot_start_time:.0f}). "
+          "Waiting for next 5m window."
+        )
+        settle_trades()
+        time.sleep(SCAN_INTERVAL)
         continue
 
       # Try each strategy in priority order
