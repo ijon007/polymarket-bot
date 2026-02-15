@@ -4,7 +4,13 @@ from loguru import logger
 from src.config import SCAN_INTERVAL, STRATEGIES, STRATEGY_PRIORITY
 from src.scanner import fetch_btc_5min_market
 from src.executor import execute_trade
-from src.database import init_db, validate_db_schema, has_open_trade_for_market, is_db_configured
+from src.database import (
+  init_db,
+  validate_db_schema,
+  has_open_trade_for_market,
+  is_db_configured,
+  update_system_status,
+)
 from src.settlement import settle_trades
 from src.utils.balance import get_current_balance
 
@@ -43,10 +49,11 @@ def main():
     logger.info(f"  ✓ {name}")
   logger.info("=" * 60)
 
-  from src.utils.rtds_client import start as rtds_start
+  from src.utils.rtds_client import start as rtds_start, get_latest_btc_usd
   rtds_start()
 
   bot_start_time = time.time()
+  polymarket_ok = True  # updated each loop
   logger.info(f"Bot start time (for window gating): {bot_start_time:.0f}")
 
   logger.log("BALANCE", f"Current Balance: ${get_current_balance():,.2f}")
@@ -57,9 +64,18 @@ def main():
     try:
       # Fetch current BTC 5min market
       market = fetch_btc_5min_market()
+      polymarket_ok = True  # fetch completed (success or no market)
 
       if not market:
         logger.info("No active market (between rounds)")
+        update_system_status(
+          engine_state="IDLE",
+          uptime_seconds=int(time.time() - bot_start_time),
+          scan_interval=SCAN_INTERVAL,
+          polymarket_ok=polymarket_ok,
+          db_ok=is_db_configured(),
+          rtds_ok=get_latest_btc_usd() is not None,
+        )
         time.sleep(30)
         continue
 
@@ -71,6 +87,14 @@ def main():
           "Waiting for next 5m window."
         )
         settle_trades()
+        update_system_status(
+          engine_state="IDLE",
+          uptime_seconds=int(time.time() - bot_start_time),
+          scan_interval=SCAN_INTERVAL,
+          polymarket_ok=polymarket_ok,
+          db_ok=is_db_configured(),
+          rtds_ok=get_latest_btc_usd() is not None,
+        )
         time.sleep(SCAN_INTERVAL)
         continue
 
@@ -105,10 +129,27 @@ def main():
 
       settle_trades()
 
+      update_system_status(
+        engine_state="SCANNING",
+        uptime_seconds=int(time.time() - bot_start_time),
+        scan_interval=SCAN_INTERVAL,
+        polymarket_ok=polymarket_ok,
+        db_ok=is_db_configured(),
+        rtds_ok=get_latest_btc_usd() is not None,
+      )
+
       time.sleep(SCAN_INTERVAL)
 
     except KeyboardInterrupt:
       logger.info("\nShutting down bot...")
+      update_system_status(
+        engine_state="STOPPED",
+        uptime_seconds=int(time.time() - bot_start_time),
+        scan_interval=SCAN_INTERVAL,
+        polymarket_ok=polymarket_ok,
+        db_ok=is_db_configured(),
+        rtds_ok=get_latest_btc_usd() is not None,
+      )
       from src.utils.rtds_client import stop as rtds_stop
       rtds_stop()
       logger.info("Running final settlement check...")
@@ -116,6 +157,14 @@ def main():
       break
     except Exception as e:
       logger.error(f"Error in main loop: {e}")
+      update_system_status(
+        engine_state="ERROR",
+        uptime_seconds=int(time.time() - bot_start_time),
+        scan_interval=SCAN_INTERVAL,
+        polymarket_ok=False,
+        db_ok=is_db_configured(),
+        rtds_ok=get_latest_btc_usd() is not None,
+      )
       time.sleep(30)
 
 

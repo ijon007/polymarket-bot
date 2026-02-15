@@ -242,6 +242,31 @@ def list_settled_trades():
     return []
 
 
+def update_system_status(
+  engine_state: str,
+  uptime_seconds: int,
+  scan_interval: int,
+  polymarket_ok: bool,
+  db_ok: bool,
+  rtds_ok: bool,
+):
+  """Update system status in Convex for dashboard display."""
+  client = _get_client()
+  if not client:
+    return
+  try:
+    client.mutation("systemStatus:upsert", {
+      "engine_state": engine_state,
+      "uptime_seconds": uptime_seconds,
+      "scan_interval": scan_interval,
+      "polymarket_ok": polymarket_ok,
+      "db_ok": db_ok,
+      "rtds_ok": rtds_ok,
+    })
+  except Exception as e:
+    logger.debug(f"System status update failed: {e}")
+
+
 def init_db_at_url(database_url: str):
   """No-op for Convex. Kept for script compatibility."""
   if database_url and "convex" in database_url.lower():

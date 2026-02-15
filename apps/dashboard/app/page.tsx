@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   DashboardHeader,
   AccountSummary,
@@ -16,11 +16,13 @@ import {
 import type { DashboardFilter } from "@/components/dashboard/date-range-bar";
 import { Toast } from "@/components/ui/toast";
 
-import { mockSystemStatus } from "@/lib/mock/system";
-import { mockAccount } from "@/lib/mock/account";
 import { mockLogs } from "@/lib/mock/logs";
-import { mockAnalytics, mockTrades } from "@/lib/mock/analytics";
-import { mockStreakGraph } from "@/lib/mock/streak";
+import { mockTrades } from "@/lib/mock/analytics";
+import {
+  useDashboardAnalytics,
+  useStreakFromConvex,
+  useSystemStatus,
+} from "@/lib/convex/hooks";
 
 const defaultFilter: DashboardFilter = { positionSide: "all", status: "all" };
 
@@ -28,6 +30,9 @@ export default function Page() {
   const [lastUpdated, setLastUpdated] = useState(0);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const analytics = useDashboardAnalytics();
+  const streakGraph = useStreakFromConvex();
+  const systemStatus = useSystemStatus();
 
   useEffect(() => {
     setLastUpdated(Date.now());
@@ -52,10 +57,7 @@ export default function Page() {
     return () => window.removeEventListener("keydown", onKey);
   }, [refreshData]);
 
-  const openPositions = useMemo(
-    () => mockTrades.filter((t) => t.status !== "settled").length,
-    []
-  );
+  const openPositions = analytics.pending;
 
   return (
     <div className="flex h-dvh flex-col overflow-y-auto overflow-x-hidden bg-background font-mono transition-colors duration-200 lg:overflow-hidden">
@@ -73,19 +75,19 @@ export default function Page() {
           <aside className="flex flex-col gap-2 lg:col-span-3 lg:min-h-0 lg:overflow-y-auto">
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
-              <AccountSummary account={mockAccount} />
+              <AccountSummary />
             </div>
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
-              <StreakCard data={mockStreakGraph} />
+              <StreakCard data={streakGraph} />
             </div>
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
-              <BotAnalytics analytics={mockAnalytics} />
+              <BotAnalytics analytics={analytics} />
             </div>
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
-              <SystemStatus status={mockSystemStatus} />
+              <SystemStatus status={systemStatus} />
             </div>
           </aside>
 
@@ -96,7 +98,7 @@ export default function Page() {
                 <EquityChart />
               </div>
               <div className="h-[380px] min-w-0 sm:h-[350px]">
-                <WinRateHeatmap trades={mockTrades} />
+                <WinRateHeatmap />
               </div>
             </div>
             <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-4">

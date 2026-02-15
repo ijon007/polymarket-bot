@@ -1,15 +1,14 @@
-import { cn } from "@/lib/utils";
-import type { AccountSummary as AccountSummaryType } from "@/types/dashboard";
+"use client";
 
-interface AccountSummaryProps {
-  account: AccountSummaryType;
-}
+import { cn } from "@/lib/utils";
+import { useDashboardAccount } from "@/lib/convex/hooks";
 
 function fmt(v: number) {
   return v.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 }
 
-export function AccountSummary({ account }: AccountSummaryProps) {
+export function AccountSummary() {
+  const account = useDashboardAccount();
   const pnlColor = account.totalPnl >= 0 ? "text-positive" : "text-destructive";
 
   return (

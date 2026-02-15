@@ -1,17 +1,87 @@
 "use client";
 
 import { useId, useMemo, useRef, useState, useCallback } from "react";
+import { useQuery } from "convex/react";
+import { api } from "@convex/_generated/api";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
 import { CardCorners } from "./card-corners";
 import type { BalancePoint, ChartTimeRange } from "@/lib/mock/charts";
-import { getBalanceOverTime } from "@/lib/mock/charts";
+import { fmtTimeHHMM } from "@/lib/mock/charts";
 import { cn } from "@/lib/utils";
+
+function fmtDateWithTime(d: Date) {
+  return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${fmtTimeHHMM(d)}`;
+}
+
+const INITIAL_BALANCE = 1000;
+
+function addDays(d: Date, n: number) {
+  const out = new Date(d);
+  out.setDate(out.getDate() + n);
+  return out;
+}
+
+function addHours(d: Date, n: number) {
+  const out = new Date(d);
+  out.setHours(out.getHours() + n);
+  return out;
+}
+
+/** Convex stores settled_at in ms (bot sends ms). Normalize to seconds for comparison with Date.now()/1000. */
+function toSec(ts: number): number {
+  return ts >= 1e12 ? ts / 1000 : ts;
+}
+
+/** Build equity-over-time from settled trades and current equity, filtered by range. */
+function buildEquitySeries(
+  settled: { settled_at?: number; actual_profit?: number }[],
+  currentEquity: number,
+  timeRange: ChartTimeRange
+): BalancePoint[] {
+  const now = Date.now() / 1000;
+  const nowDate = new Date();
+  const is1D = timeRange === "1D";
+  let rangeStartSec: number;
+  if (is1D) {
+    const rangeStartDate = addHours(nowDate, -24);
+    rangeStartSec = rangeStartDate.getTime() / 1000;
+  } else {
+    const days = timeRange === "7D" || timeRange === "1M" ? (timeRange === "7D" ? 7 : 30) : timeRange === "30D" ? 30 : 90;
+    const rangeStartDate = addDays(nowDate, -days);
+    rangeStartSec = rangeStartDate.getTime() / 1000;
+  }
+
+  const sorted = [...settled].sort((a, b) => (a.settled_at ?? 0) - (b.settled_at ?? 0));
+  const pnlBeforeRange = sorted
+    .filter((t) => toSec(t.settled_at ?? 0) < rangeStartSec)
+    .reduce((s, t) => s + (t.actual_profit ?? 0), 0);
+  const startBalance = INITIAL_BALANCE + pnlBeforeRange;
+
+  let cumulative = INITIAL_BALANCE;
+  const points: { ts: number; balance: number }[] = [];
+  for (const t of sorted) {
+    const st = toSec(t.settled_at ?? 0);
+    cumulative += t.actual_profit ?? 0;
+    if (st >= rangeStartSec && st <= now) points.push({ ts: st, balance: cumulative });
+  }
+
+  const formatLabel = (tsSec: number) => {
+    const d = new Date(tsSec * 1000);
+    return is1D ? fmtTimeHHMM(d) : fmtDateWithTime(d);
+  };
+
+  type Point = BalancePoint & { timestamp: number };
+  const result: Point[] = [
+    { date: formatLabel(rangeStartSec), balance: startBalance, timestamp: rangeStartSec },
+  ];
+  for (const p of points) result.push({ date: formatLabel(p.ts), balance: p.balance, timestamp: p.ts });
+  result.push({ date: formatLabel(now), balance: currentEquity, timestamp: now });
+  return result;
+}
 
 const chartConfig = {
   balance: { label: "Equity", color: "var(--color-positive)" },
@@ -38,27 +108,74 @@ export function EquityChart() {
   const chartWrapRef = useRef<HTMLDivElement>(null);
   const gradientId = useId().replace(/:/g, "");
 
-  const balanceData = useMemo(() => getBalanceOverTime(timeRange), [timeRange]);
-  const displayData = useMemo(
-    () => balanceData.map((d) => ({ ...d, time: d.date, value: d.balance })),
-    [balanceData]
-  );
+  const settled = useQuery(api.trades.listSettled, {});
+  const analytics = useQuery(api.trades.dashboardAnalytics, {});
+  const currentEquity = INITIAL_BALANCE + (analytics?.totalPnl ?? 0);
+
+  const balanceData = useMemo(() => {
+    if (settled === undefined) {
+      const now = new Date();
+      const start = timeRange === "1D" ? addHours(now, -24) : addDays(now, timeRange === "7D" || timeRange === "1M" ? (timeRange === "7D" ? -7 : -30) : timeRange === "30D" ? -30 : -90);
+      const fmt = timeRange === "1D" ? fmtTimeHHMM : fmtDateWithTime;
+      const startSec = start.getTime() / 1000;
+      const nowSec = now.getTime() / 1000;
+      return [
+        { date: fmt(start), balance: currentEquity, timestamp: startSec },
+        { date: fmt(now), balance: currentEquity, timestamp: nowSec },
+      ];
+    }
+    return buildEquitySeries(settled, currentEquity, timeRange);
+  }, [settled, currentEquity, timeRange]);
+  const displayData = useMemo(() => {
+    return balanceData.map((d) => {
+      const pt = d as BalancePoint & { timestamp?: number };
+      return {
+        ...d,
+        time: d.date,
+        value: d.balance,
+        timestamp: pt.timestamp ?? new Date(d.date).getTime() / 1000,
+      };
+    });
+  }, [balanceData]);
 
   const xTicks = useMemo(() => {
     const n = displayData.length;
     if (n === 0) return undefined;
-    if (timeRange === "1D") {
-      const numTicks = 8;
-      const step = Math.max(1, Math.floor((n - 1) / numTicks));
-      const indices = Array.from({ length: numTicks }, (_, i) => Math.min(i * step, n - 2));
-      return [...new Set(indices)].map((i) => displayData[i]?.time).filter(Boolean);
-    }
-    const numTicks = 9;
+    const numTicks = timeRange === "1D" ? 12 : timeRange === "7D" || timeRange === "1M" ? 10 : 10;
     const indices = Array.from({ length: numTicks }, (_, i) =>
       i === numTicks - 1 ? n - 1 : Math.round((i / (numTicks - 1)) * (n - 1))
     );
-    return [...new Set(indices)].map((i) => displayData[i]?.time).filter(Boolean);
+    const timestamps = [...new Set(indices)]
+      .map((i) => displayData[i]?.timestamp)
+      .filter((v): v is number => typeof v === "number");
+    return timestamps.sort((a, b) => a - b);
   }, [displayData, timeRange]);
+
+  const yDomain = useMemo(() => {
+    if (!displayData.length) return [0, 1000];
+    const min = Math.min(...displayData.map((d) => d.value));
+    const max = Math.max(...displayData.map((d) => d.value));
+    const range = max - min || 1;
+    const pad = Math.max(20, range * 0.08);
+    return [min - pad, max + pad];
+  }, [displayData]);
+
+  const xDomain = useMemo(() => {
+    if (!displayData.length) return [0, 1];
+    const min = Math.min(...displayData.map((d) => d.timestamp).filter((v): v is number => typeof v === "number"));
+    const max = Math.max(...displayData.map((d) => d.timestamp).filter((v): v is number => typeof v === "number"));
+    const range = max - min || 1;
+    const pad = range * 0.02;
+    return [min - pad, max + pad];
+  }, [displayData]);
+
+  const formatTick = useCallback(
+    (ts: number) => {
+      const d = new Date(ts * 1000);
+      return timeRange === "1D" ? fmtTimeHHMM(d) : fmtDateWithTime(d);
+    },
+    [timeRange]
+  );
 
   const firstVal = displayData[0]?.value ?? 0;
   const lastVal = displayData[displayData.length - 1]?.value ?? 0;
@@ -147,7 +264,7 @@ export function EquityChart() {
           </>
         )}
         <ChartContainer config={chartConfig} className="h-full min-h-[180px] w-full [&_.recharts-wrapper]:block!">
-          <AreaChart data={displayData} margin={{ top: 8, right: 8, bottom: 24, left: 0 }}>
+          <AreaChart data={displayData} margin={{ top: 12, right: 16, bottom: 28, left: 4 }}>
             <defs>
               <linearGradient id={`equityFill-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="var(--color-positive)" stopOpacity={0.25} />
@@ -155,16 +272,27 @@ export function EquityChart() {
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-            <XAxis dataKey="time" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} ticks={xTicks} />
+            <XAxis
+              dataKey="timestamp"
+              type="number"
+              domain={xDomain}
+              tickLine={false}
+              axisLine={false}
+              tick={{ fontSize: 10 }}
+              ticks={xTicks}
+              tickFormatter={formatTick}
+              allowDataOverflow={false}
+            />
             <YAxis
               tickLine={false}
               axisLine={false}
               tick={{ fontSize: 10 }}
               width={48}
               tickFormatter={(v: number) =>
-                `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`
+                `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v)}`
               }
-              domain={["dataMin - 20", "dataMax + 20"]}
+              domain={yDomain}
+              allowDataOverflow={false}
             />
             <Area
               dataKey="value"

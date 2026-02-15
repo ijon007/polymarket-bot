@@ -104,6 +104,77 @@ export const settledPnLSum = query({
   },
 });
 
+export const dashboardAnalytics = query({
+  args: {},
+  handler: async (ctx) => {
+    const [paper, won, lost] = await Promise.all([
+      ctx.db.query("trades").withIndex("by_status", (q) => q.eq("status", "paper")).collect(),
+      ctx.db.query("trades").withIndex("by_status", (q) => q.eq("status", "won")).collect(),
+      ctx.db.query("trades").withIndex("by_status", (q) => q.eq("status", "lost")).collect(),
+    ]);
+    const settled = [...won, ...lost];
+    let totalPnl = 0;
+    let bestTrade = 0;
+    let worstTrade = 0;
+    for (const t of settled) {
+      const p = t.actual_profit ?? 0;
+      totalPnl += p;
+      if (p > bestTrade) bestTrade = p;
+      if (p < worstTrade) worstTrade = p;
+    }
+    return {
+      totalTrades: paper.length + settled.length,
+      settled: settled.length,
+      pending: paper.length,
+      totalPnl,
+      bestTrade,
+      worstTrade,
+      wonCount: won.length,
+      lostCount: lost.length,
+    };
+  },
+});
+
+export const dashboardSettledForStreak = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 40;
+    const won = await ctx.db
+      .query("trades")
+      .withIndex("by_status", (q) => q.eq("status", "won"))
+      .collect();
+    const lost = await ctx.db
+      .query("trades")
+      .withIndex("by_status", (q) => q.eq("status", "lost"))
+      .collect();
+    const all = [...won, ...lost];
+    all.sort((a, b) => (b.settled_at ?? 0) - (a.settled_at ?? 0));
+    return all.slice(0, limit);
+  },
+});
+
+export const dashboardTodayPnl = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now() / 1000;
+    const dayAgo = now - 24 * 60 * 60;
+    const won = await ctx.db
+      .query("trades")
+      .withIndex("by_status", (q) => q.eq("status", "won"))
+      .collect();
+    const lost = await ctx.db
+      .query("trades")
+      .withIndex("by_status", (q) => q.eq("status", "lost"))
+      .collect();
+    let sum = 0;
+    for (const t of [...won, ...lost]) {
+      const st = t.settled_at ?? 0;
+      if (st >= dayAgo && t.actual_profit != null) sum += t.actual_profit;
+    }
+    return sum;
+  },
+});
+
 export const schemaCheck = mutation({
   args: tradeInsertArgs,
   handler: async (ctx, args) => {

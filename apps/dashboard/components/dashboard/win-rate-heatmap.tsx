@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQuery } from "convex/react";
+import { api } from "@convex/_generated/api";
 import {
   getWinRateHeatmap,
   type WinRateHeatmapData,
@@ -8,6 +10,22 @@ import {
 } from "@/lib/mock/charts";
 import { CardCorners } from "./card-corners";
 import { cn } from "@/lib/utils";
+
+/** Convex stores executed_at/settled_at in milliseconds (bot sends ms). Normalize to ms for Date. */
+function toMs(ts: number): number {
+  return ts >= 1e12 ? ts : ts * 1000;
+}
+
+/** Format Unix timestamp (sec or ms) as "YYYY-MM-DD HH:mm" in local time for correct day/hour bucketing. */
+function formatExecutedAtLocal(ts: number): string {
+  const d = new Date(toMs(ts));
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${day} ${h}:${min}`;
+}
 
 function getCell(
   data: WinRateHeatmapData,
@@ -44,13 +62,18 @@ function pnlBg(pnl: number, min: number, max: number): string {
 
 type Metric = "winRate" | "pnl";
 
-interface WinRateHeatmapProps {
-  trades: { executedAt: string; pnl: number; status?: string }[];
-}
-
 const TOOLTIP_OFFSET = 12;
 
-export function WinRateHeatmap({ trades }: WinRateHeatmapProps) {
+export function WinRateHeatmap() {
+  const settled = useQuery(api.trades.listSettled, {});
+  const trades = useMemo(() => {
+    if (settled === undefined) return [];
+    return settled.map((t) => ({
+      executedAt: formatExecutedAtLocal(t.executed_at),
+      pnl: t.actual_profit ?? 0,
+      status: t.status,
+    }));
+  }, [settled]);
   const [metric, setMetric] = useState<Metric>("winRate");
   const [hover, setHover] = useState<{
     dayOfWeek: number;

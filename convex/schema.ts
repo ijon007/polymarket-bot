@@ -27,6 +27,17 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_market_ticker_status", ["market_ticker", "status"]),
 
+  system_status: defineTable({
+    key: v.string(),
+    engine_state: v.string(),
+    uptime_seconds: v.number(),
+    scan_interval: v.number(),
+    polymarket_ok: v.boolean(),
+    db_ok: v.boolean(),
+    rtds_ok: v.boolean(),
+    updated_at: v.number(),
+  }).index("by_key", ["key"]),
+
   market_outcomes: defineTable({
     slug: v.string(),
     condition_id: v.string(),

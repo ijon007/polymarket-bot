@@ -9,6 +9,7 @@
  */
 
 import type * as marketOutcomes from "../marketOutcomes.js";
+import type * as systemStatus from "../systemStatus.js";
 import type * as trades from "../trades.js";
 
 import type {
@@ -19,6 +20,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   marketOutcomes: typeof marketOutcomes;
+  systemStatus: typeof systemStatus;
   trades: typeof trades;
 }>;
 
