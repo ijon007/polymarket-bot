@@ -21,12 +21,10 @@ if DATABASE_URL:
 Session = sessionmaker(bind=engine) if engine else None
 
 
-def _migrate_schema():
-  """Add missing columns to existing trades table (schema migration)."""
-  if not engine:
-    return
+def _migrate_schema_on_engine(eng):
+  """Add missing columns to existing trades table (schema migration) on the given engine."""
   try:
-    with engine.connect() as conn:
+    with eng.connect() as conn:
       conn.execute(text("""
         ALTER TABLE trades ADD COLUMN IF NOT EXISTS market_ticker VARCHAR;
         ALTER TABLE trades ADD COLUMN IF NOT EXISTS condition_id VARCHAR;
@@ -52,6 +50,13 @@ def _migrate_schema():
     logger.info("Schema migration completed")
   except Exception as e:
     logger.warning(f"Schema migration: {e}")
+
+
+def _migrate_schema():
+  """Add missing columns to existing trades table (schema migration)."""
+  if not engine:
+    return
+  _migrate_schema_on_engine(engine)
 
 
 class Trade(Base):
@@ -107,6 +112,30 @@ def init_db():
     )
     logger.error(str(e.orig) if getattr(e, "orig", None) else str(e))
     sys.exit(1)
+
+
+def init_db_at_url(database_url: str):
+  """
+  Scaffold the database at the given URL: create all tables and run migrations.
+  Use this to initialize a different DB than DATABASE_URL (e.g. for a separate env or local copy).
+  """
+  url = (database_url or "").strip()
+  if not url:
+    raise ValueError("database_url is required and must be non-empty")
+  try:
+    eng = create_engine(url)
+    Base.metadata.create_all(eng)
+    _migrate_schema_on_engine(eng)
+    logger.info("Database initialized at given URL")
+  except ModuleNotFoundError as e:
+    if "psycopg2" in str(e):
+      raise ModuleNotFoundError(
+        "PostgreSQL driver not installed. From your project venv run: pip install psycopg2-binary"
+      ) from e
+    raise
+  except OperationalError as e:
+    logger.error("Database connection failed (check URL, network, and credentials).")
+    raise
 
 
 def _dummy_trade_payload():
