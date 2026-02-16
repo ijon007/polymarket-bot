@@ -57,7 +57,7 @@ export interface LogEntry {
 }
 
 export interface TradeRow {
-  id: number;
+  id: string;
   market: string;
   question: string;
   side: string;

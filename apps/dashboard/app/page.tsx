@@ -16,10 +16,10 @@ import {
 import type { DashboardFilter } from "@/components/dashboard/date-range-bar";
 import { Toast } from "@/components/ui/toast";
 
-import { mockLogs } from "@/lib/mock/logs";
-import { mockTrades } from "@/lib/mock/analytics";
 import {
   useDashboardAnalytics,
+  useLogEntries,
+  usePositions,
   useStreakFromConvex,
   useSystemStatus,
 } from "@/lib/convex/hooks";
@@ -33,6 +33,8 @@ export default function Page() {
   const analytics = useDashboardAnalytics();
   const streakGraph = useStreakFromConvex();
   const systemStatus = useSystemStatus();
+  const positions = usePositions();
+  const logs = useLogEntries();
 
   useEffect(() => {
     setLastUpdated(Date.now());
@@ -105,12 +107,12 @@ export default function Page() {
               <div className="relative flex min-h-0 flex-col overflow-hidden rounded border border-border/60 bg-card shadow-sm sm:col-span-2">
                 <CardCorners />
                 <div className="min-h-0 flex-1 overflow-auto">
-                  <ActivePositions trades={mockTrades} filter={defaultFilter} />
+                  <ActivePositions trades={positions} filter={defaultFilter} />
                 </div>
               </div>
               <div className="relative flex min-h-0 flex-col overflow-hidden rounded border border-border/60 bg-card shadow-sm sm:col-span-2">
                 <CardCorners />
-                <LiveLogs logs={mockLogs} follow />
+                <LiveLogs logs={logs} follow />
               </div>
             </div>
           </div>

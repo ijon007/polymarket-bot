@@ -46,4 +46,15 @@ export default defineSchema({
     btc_start_price: v.optional(v.number()),
     btc_end_price: v.optional(v.number()),
   }).index("by_slug", ["slug"]),
+
+  log_batches: defineTable({
+    createdAt: v.number(),
+    entries: v.array(
+      v.object({
+        timestamp: v.string(),
+        level: v.string(),
+        message: v.string(),
+      })
+    ),
+  }).index("by_createdAt", ["createdAt"]),
 });

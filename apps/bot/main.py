@@ -1,4 +1,5 @@
 import sys
+import signal
 import time
 from loguru import logger
 from src.config import SCAN_INTERVAL, STRATEGIES, STRATEGY_PRIORITY
@@ -11,6 +12,7 @@ from src.database import (
   is_db_configured,
   update_system_status,
 )
+from src.log_buffer import start_log_buffer, stop_log_buffer
 from src.settlement import settle_trades
 from src.utils.balance import get_current_balance
 
@@ -25,6 +27,7 @@ def main():
   logger.info("=" * 60)
 
   init_db()
+  start_log_buffer()
   try:
     validate_db_schema()
   except RuntimeError as e:
@@ -49,18 +52,45 @@ def main():
     logger.info(f"  ✓ {name}")
   logger.info("=" * 60)
 
-  from src.utils.rtds_client import start as rtds_start, get_latest_btc_usd
+  from src.utils.rtds_client import start as rtds_start, get_latest_btc_usd, stop as rtds_stop
   rtds_start()
+
+  shutdown_requested = False
+
+  def request_shutdown(*_args):
+    nonlocal shutdown_requested
+    shutdown_requested = True
+
+  if hasattr(signal, "SIGTERM"):
+    signal.signal(signal.SIGTERM, request_shutdown)
+  signal.signal(signal.SIGINT, request_shutdown)
 
   bot_start_time = time.time()
   polymarket_ok = True  # updated each loop
   logger.info(f"Bot start time (for window gating): {bot_start_time:.0f}")
+
+  def shutdown_bot():
+    logger.info("Shutting down bot...")
+    update_system_status(
+      engine_state="STOPPED",
+      uptime_seconds=int(time.time() - bot_start_time),
+      scan_interval=SCAN_INTERVAL,
+      polymarket_ok=polymarket_ok,
+      db_ok=is_db_configured(),
+      rtds_ok=False,
+    )
+    rtds_stop()
+    logger.info("Running final settlement check...")
+    settle_trades()
+    stop_log_buffer()
 
   logger.log("BALANCE", f"Current Balance: ${get_current_balance():,.2f}")
 
   opportunities_found = 0
 
   while True:
+    if shutdown_requested:
+      break
     try:
       # Fetch current BTC 5min market
       market = fetch_btc_5min_market()
@@ -99,26 +129,26 @@ def main():
         continue
 
       # Try each strategy in priority order
-      signal = None
+      trade_signal = None
       for strategy_name in STRATEGY_PRIORITY:
         if strategy_name not in strategy_instances:
           continue
 
         strategy = strategy_instances[strategy_name]
-        signal = strategy.analyze(market)
+        trade_signal = strategy.analyze(market)
 
-        if signal:
+        if trade_signal:
           logger.info(f"Strategy '{strategy_name}' triggered!")
           break
 
       # Execute if signal found (only one trade per market)
-      if signal:
+      if trade_signal:
         slug = market.get("slug") or market.get("question") or ""
         if has_open_trade_for_market(slug):
           logger.debug(f"Skip trade: already have open position on {slug}")
         else:
           opportunities_found += 1
-          success = execute_trade(market, signal)
+          success = execute_trade(market, trade_signal)
           if success:
             logger.success(f"Trade executed! Total opportunities: {opportunities_found}")
       else:
@@ -140,21 +170,6 @@ def main():
 
       time.sleep(SCAN_INTERVAL)
 
-    except KeyboardInterrupt:
-      logger.info("\nShutting down bot...")
-      update_system_status(
-        engine_state="STOPPED",
-        uptime_seconds=int(time.time() - bot_start_time),
-        scan_interval=SCAN_INTERVAL,
-        polymarket_ok=polymarket_ok,
-        db_ok=is_db_configured(),
-        rtds_ok=get_latest_btc_usd() is not None,
-      )
-      from src.utils.rtds_client import stop as rtds_stop
-      rtds_stop()
-      logger.info("Running final settlement check...")
-      settle_trades()
-      break
     except Exception as e:
       logger.error(f"Error in main loop: {e}")
       update_system_status(
@@ -166,6 +181,8 @@ def main():
         rtds_ok=get_latest_btc_usd() is not None,
       )
       time.sleep(30)
+
+  shutdown_bot()
 
 
 if __name__ == "__main__":

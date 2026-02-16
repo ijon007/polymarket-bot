@@ -5,9 +5,11 @@ import { api } from "@convex/_generated/api";
 import type {
   AccountSummary,
   BotAnalytics,
+  LogEntry,
   StreakGraph,
   StreakTradeEntry,
   SystemStatus,
+  TradeRow,
 } from "@/types/dashboard";
 import { mockAccount } from "@/lib/mock/account";
 import { mockAnalytics } from "@/lib/mock/analytics";
@@ -102,6 +104,39 @@ function formatUptime(seconds: number): string {
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+export function usePositions(): TradeRow[] {
+  const data = useQuery(api.trades.listForDashboard, {});
+  if (data === undefined) return [];
+  return data.map((t) => ({
+    id: t._id,
+    market: t.market_ticker,
+    question: t.question ?? "",
+    side: t.side,
+    price: t.price ?? t.yes_price ?? t.no_price ?? 0,
+    size: t.size ?? t.position_size ?? 0,
+    pnl: t.actual_profit ?? 0,
+    status: t.status === "paper" ? ("paper" as const) : ("settled" as const),
+    executedAt: formatExecutedAtLocal(t.executed_at),
+  }));
+}
+
+export function useLogEntries(): LogEntry[] {
+  const batches = useQuery(api.logBatches.listRecent, {});
+  if (batches === undefined) return [];
+  const entries: LogEntry[] = [];
+  for (const batch of batches) {
+    for (const e of batch.entries) {
+      entries.push({
+        timestamp: e.timestamp,
+        level: (e.level === "WARN" || e.level === "ERROR" ? e.level : "INFO") as LogEntry["level"],
+        message: e.message,
+      });
+    }
+  }
+  entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  return entries;
 }
 
 export function useSystemStatus(): SystemStatus {

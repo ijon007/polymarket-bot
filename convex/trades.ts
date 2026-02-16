@@ -153,6 +153,20 @@ export const dashboardSettledForStreak = query({
   },
 });
 
+export const listForDashboard = query({
+  args: {},
+  handler: async (ctx) => {
+    const [paper, won, lost] = await Promise.all([
+      ctx.db.query("trades").withIndex("by_status", (q) => q.eq("status", "paper")).collect(),
+      ctx.db.query("trades").withIndex("by_status", (q) => q.eq("status", "won")).collect(),
+      ctx.db.query("trades").withIndex("by_status", (q) => q.eq("status", "lost")).collect(),
+    ]);
+    const all = [...paper, ...won, ...lost];
+    all.sort((a, b) => (b.executed_at ?? 0) - (a.executed_at ?? 0));
+    return all;
+  },
+});
+
 export const dashboardTodayPnl = query({
   args: {},
   handler: async (ctx) => {

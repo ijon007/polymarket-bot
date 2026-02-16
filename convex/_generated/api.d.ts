@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as crons from "../crons.js";
+import type * as logBatches from "../logBatches.js";
 import type * as marketOutcomes from "../marketOutcomes.js";
 import type * as systemStatus from "../systemStatus.js";
 import type * as trades from "../trades.js";
@@ -19,6 +21,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  crons: typeof crons;
+  logBatches: typeof logBatches;
   marketOutcomes: typeof marketOutcomes;
   systemStatus: typeof systemStatus;
   trades: typeof trades;

@@ -2,12 +2,11 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/format";
 import type { TradeRow } from "@/types/dashboard";
 import type { DashboardFilter } from "./date-range-bar";
-import { CaretUpIcon, CaretDownIcon, FileCsvIcon } from "@phosphor-icons/react";
+import { CaretUpIcon, CaretDownIcon } from "@phosphor-icons/react";
 
 const MOBILE_BREAKPOINT = "(max-width: 1023px)";
 
@@ -30,28 +29,6 @@ interface ActivePositionsProps {
 
 type SortKey = "market" | "side" | "price" | "size" | "pnl" | "status" | "executedAt";
 type SortDir = "asc" | "desc";
-
-function downloadCsv(trades: TradeRow[]) {
-  const headers = ["Market", "Question", "Side", "Price", "Size", "P&L", "Status", "Executed At"];
-  const rows = trades.map((t) => [
-    t.market,
-    `"${(t.question || "").replace(/"/g, '""')}"`,
-    t.side,
-    t.price,
-    t.size,
-    t.pnl,
-    t.status,
-    t.executedAt,
-  ]);
-  const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `positions-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 export function ActivePositions({ trades, filter }: ActivePositionsProps) {
   const [sortKey, setSortKey] = useState<SortKey>("executedAt");
@@ -166,17 +143,6 @@ export function ActivePositions({ trades, filter }: ActivePositionsProps) {
               <span className="text-muted-foreground/70"> / {trades.length}</span>
             )}
           </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 gap-1 text-muted-foreground hover:text-foreground"
-            onClick={() => downloadCsv(sorted)}
-            disabled={sorted.length === 0}
-            aria-label="Export to CSV"
-          >
-            <FileCsvIcon className="size-3.5" weight="duotone" />
-            Export
-          </Button>
         </div>
       </div>
       {(!isMobile || mobileExpanded) && (

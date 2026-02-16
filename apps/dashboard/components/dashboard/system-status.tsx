@@ -10,7 +10,9 @@ const statusVariant = (s: SystemStatusType["engineState"]) => {
   switch (s) {
     case "SCANNING": return "default" as const;
     case "IDLE": return "secondary" as const;
-    default: return "destructive" as const;
+    case "STOPPED": return "destructive" as const;
+    case "ERROR": return "destructive" as const;
+    default: return "secondary" as const;
   }
 };
 

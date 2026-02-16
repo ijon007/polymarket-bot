@@ -14,7 +14,7 @@ export const mockAnalytics: BotAnalytics = {
 // Base set (current day, one paper)
 const baseTrades: TradeRow[] = [
   {
-    id: 194,
+    id: "194",
     market: "btc-updown-5m-1771083600",
     question: "Will BTC go up in the next 5 min?",
     side: "YES",
@@ -25,7 +25,7 @@ const baseTrades: TradeRow[] = [
     executedAt: "2026-02-15 13:10:50",
   },
   {
-    id: 193,
+    id: "193",
     market: "btc-updown-5m-1771083000",
     question: "Will BTC go up in the next 5 min?",
     side: "NO",
@@ -36,7 +36,7 @@ const baseTrades: TradeRow[] = [
     executedAt: "2026-02-15 13:05:48",
   },
   {
-    id: 192,
+    id: "192",
     market: "btc-updown-5m-1771082400",
     question: "Will BTC go up in the next 5 min?",
     side: "YES",
@@ -47,7 +47,7 @@ const baseTrades: TradeRow[] = [
     executedAt: "2026-02-15 13:00:32",
   },
   {
-    id: 191,
+    id: "191",
     market: "btc-updown-5m-1771082400",
     question: "Will BTC go up in the next 5 min?",
     side: "YES",
@@ -58,7 +58,7 @@ const baseTrades: TradeRow[] = [
     executedAt: "2026-02-15 13:00:30",
   },
   {
-    id: 190,
+    id: "190",
     market: "btc-updown-5m-1771081800",
     question: "Will BTC go up in the next 5 min?",
     side: "YES",
@@ -69,7 +69,7 @@ const baseTrades: TradeRow[] = [
     executedAt: "2026-02-15 12:55:29",
   },
   {
-    id: 189,
+    id: "189",
     market: "btc-updown-5m-1771081200",
     question: "Will BTC go up in the next 5 min?",
     side: "NO",
@@ -80,7 +80,7 @@ const baseTrades: TradeRow[] = [
     executedAt: "2026-02-15 12:55:28",
   },
   {
-    id: 188,
+    id: "188",
     market: "btc-updown-5m-1771080600",
     question: "Will BTC go up in the next 5 min?",
     side: "YES",
@@ -91,7 +91,7 @@ const baseTrades: TradeRow[] = [
     executedAt: "2026-02-15 12:50:15",
   },
   {
-    id: 187,
+    id: "187",
     market: "btc-updown-5m-1771080300",
     question: "Will BTC go up in the next 5 min?",
     side: "YES",
@@ -116,7 +116,7 @@ function genSlot(
   for (let i = 0; i < total; i++) {
     const win = i < wins;
     rows.push({
-      id: idStart + i,
+      id: String(idStart + i),
       market: `btc-updown-5m-${idStart + i}`,
       question: "Will BTC go up in the next 5 min?",
       side: "UP",
