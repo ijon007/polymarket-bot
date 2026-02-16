@@ -167,11 +167,17 @@ export const listForDashboard = query({
   },
 });
 
+/** settled_at from bot is in ms; normalize to seconds for comparison. */
+function settledAtSec(ts: number | undefined): number {
+  if (ts == null) return 0;
+  return ts >= 1e12 ? ts / 1000 : ts;
+}
+
 export const dashboardTodayPnl = query({
   args: {},
   handler: async (ctx) => {
-    const now = Date.now() / 1000;
-    const dayAgo = now - 24 * 60 * 60;
+    const nowSec = Date.now() / 1000;
+    const dayStartSec = Math.floor(nowSec / 86400) * 86400;
     const won = await ctx.db
       .query("trades")
       .withIndex("by_status", (q) => q.eq("status", "won"))
@@ -182,8 +188,8 @@ export const dashboardTodayPnl = query({
       .collect();
     let sum = 0;
     for (const t of [...won, ...lost]) {
-      const st = t.settled_at ?? 0;
-      if (st >= dayAgo && t.actual_profit != null) sum += t.actual_profit;
+      const stSec = settledAtSec(t.settled_at);
+      if (stSec >= dayStartSec && t.actual_profit != null) sum += t.actual_profit;
     }
     return sum;
   },
