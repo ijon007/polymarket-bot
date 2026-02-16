@@ -75,10 +75,7 @@ function buildEquitySeries(
   let cumulative = startBalance;
   for (const t of sorted) {
     const st = toSec(t.settled_at ?? 0);
-    if (st < rangeStartSec || st > now) {
-      cumulative += t.actual_profit ?? 0;
-      continue;
-    }
+    if (st < rangeStartSec || st > now) continue;
     result.push({ date: formatLabel(st), balance: cumulative, timestamp: st });
     cumulative += t.actual_profit ?? 0;
     result.push({ date: formatLabel(st), balance: cumulative, timestamp: st });
