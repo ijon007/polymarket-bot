@@ -26,7 +26,7 @@ from src.config import (
 from src.database import has_open_trade_for_market, is_db_configured, list_last_5m_outcomes, update_system_status
 from src.quarter_executor import execute_signal_engine_trade
 from src.ws_polymarket import WhaleSignal, get_best_asks, get_imbalance_data, get_whale_signals
-from src.ws_rtds import get_btc_move_60s, get_latest_btc_usd
+from src.utils.rtds_client import get_btc_move_60s, get_latest_btc_usd
 
 _IMBALANCE_SAMPLES = 60  # 60 * 500ms = 30s
 _imbalance_history: deque = deque(maxlen=_IMBALANCE_SAMPLES)
@@ -270,7 +270,7 @@ def _run_tick(market: Optional[Dict[str, Any]]) -> None:
   strike = market.get("window_start_ts")
   strike_price = None
   if strike is not None:
-    from src.ws_rtds import get_btc_at_timestamp
+    from src.utils.rtds_client import get_btc_at_timestamp
     strike_price = get_btc_at_timestamp(strike)
   btc_spot = get_latest_btc_usd()
   if not _last_second_gate(seconds_left, btc_spot, strike_price, market_repriced=False):

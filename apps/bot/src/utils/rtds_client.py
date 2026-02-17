@@ -22,6 +22,7 @@ _RECONNECT_DELAY = 5
 _MAX_RECONNECT_DELAY = 60
 _BUFFER_MS = 10 * 60 * 1000  # 10 minutes
 _START_PRICE_CACHE_MAX_AGE_SEC = 30 * 60  # keep cached start prices for 30 min
+_RECENT_WINDOW_SEC = 90  # for new window: if no tick at or before ts, use first tick in buffer
 
 _lock = threading.Lock()
 _latest_btc_usd: Optional[float] = None
@@ -153,13 +154,34 @@ def get_latest_btc_usd() -> Optional[float]:
     return _latest_btc_usd
 
 
+def get_btc_move_60s() -> Optional[float]:
+  """
+  Return BTC price change (as decimal, e.g. 0.003 = 0.3%) over last 60 seconds.
+  Returns None if insufficient data.
+  """
+  now_ms = int(time.time() * 1000)
+  cutoff_ms = now_ms - 60 * 1000
+  with _lock:
+    if not _buffer or _latest_btc_usd is None:
+      return None
+    price_at_cutoff = None
+    for t, v in _buffer:
+      if t <= cutoff_ms:
+        price_at_cutoff = v
+      else:
+        break
+    if price_at_cutoff is None or price_at_cutoff <= 0:
+      return None
+    return (_latest_btc_usd - price_at_cutoff) / price_at_cutoff
+
+
 def get_btc_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
   """
   Return BTC price at the given Unix timestamp (seconds): last tick with timestamp <= T.
   Matches oracle semantics (price that was current at that moment). Returns None if we
   have no tick at or before T (e.g. we connected after that time).
-  Once we have a value for a timestamp we cache it so RTDS reconnect does not lose
-  the start price for the current 15-min window.
+  For a new window (ts within RECENT_WINDOW_SEC of now) with no tick at or before ts,
+  use the first tick in buffer and cache it so the window gets a stable start price.
   """
   if ts_unix_seconds <= 0:
     return None
@@ -178,6 +200,11 @@ def get_btc_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
       last_at_or_before = v
     if last_at_or_before is not None:
       _start_price_cache[ts_unix_seconds] = last_at_or_before
+    else:
+      if now_sec - ts_unix_seconds <= _RECENT_WINDOW_SEC:
+        first_t, first_v = _buffer[0]
+        _start_price_cache[ts_unix_seconds] = first_v
+        last_at_or_before = first_v
     cutoff = now_sec - _START_PRICE_CACHE_MAX_AGE_SEC
     to_drop = [k for k in _start_price_cache if k < cutoff]
     for k in to_drop:

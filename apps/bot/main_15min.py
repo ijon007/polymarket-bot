@@ -13,7 +13,7 @@ from src.log_buffer import start_log_buffer, stop_log_buffer
 from src.scanner_15min import fetch_btc_15min_market
 from src.signal_engine import run_loop, set_stop
 from src.ws_polymarket import start as ws_pm_start, stop as ws_pm_stop
-from src.ws_rtds import start as ws_rtds_start, stop as ws_rtds_stop
+from src.utils.rtds_client import start as rtds_start, stop as rtds_stop
 
 
 def main() -> None:
@@ -34,8 +34,8 @@ def main() -> None:
       "CONVEX_URL not set - trades will NOT be saved. Set CONVEX_URL in .env.local"
     )
 
-  # Start RTDS for BTC price
-  ws_rtds_start()
+  # Start RTDS for BTC price (same client as 5-min bot)
+  rtds_start()
 
   # Fetch 15-min market to get token IDs, then start Polymarket WS
   market = fetch_btc_15min_market()
@@ -72,7 +72,7 @@ def main() -> None:
       key="15min",
     )
     ws_pm_stop()
-    ws_rtds_stop()
+    rtds_stop()
     stop_log_buffer()
     logger.info("15-min engine stopped")
 

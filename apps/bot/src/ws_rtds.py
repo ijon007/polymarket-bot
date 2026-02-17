@@ -2,11 +2,12 @@
 RTDS WebSocket client for 15-min signal engine.
 Uses RTDS_WS_URL from config. Subscribes to BTC price stream.
 Exposes get_latest_btc_usd() and get_btc_move_60s() for last-second gate.
+Start price for new window: if no tick at or before window_ts yet, use first tick in buffer (cache it).
 """
 import json
 import threading
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -23,8 +24,11 @@ _RECONNECT_DELAY = 5
 _MAX_RECONNECT_DELAY = 60
 _RATE_LIMIT_BACKOFF_SEC = 60
 _BUFFER_MS = 10 * 60 * 1000  # 10 minutes
+_START_PRICE_CACHE_MAX_AGE_SEC = 30 * 60  # keep cached start prices for 30 min
+_RECENT_WINDOW_SEC = 90  # treat ts as "new window" if within this many seconds of now
 
 _lock = threading.Lock()
+_start_price_cache: Dict[int, float] = {}  # ts_unix_sec -> price; survives reconnect
 _rate_limited = False
 _latest_btc_usd: Optional[float] = None
 _latest_ts_ms: Optional[int] = None
@@ -175,16 +179,37 @@ def get_btc_move_60s() -> Optional[float]:
 
 
 def get_btc_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
-  """Return BTC price at given Unix timestamp (seconds)."""
+  """
+  Return BTC price at given Unix timestamp (seconds): last tick with timestamp <= T.
+  For a new 15-min window we may have no tick at or before window_ts yet; if ts is
+  within RECENT_WINDOW_SEC of now, use the first (oldest) tick in buffer as start price
+  and cache it so the window gets a stable start price.
+  """
   if ts_unix_seconds <= 0:
     return None
-  ts_ms = ts_unix_seconds * 1000
+  now_sec = int(time.time())
   with _lock:
+    cached = _start_price_cache.get(ts_unix_seconds)
+    if cached is not None:
+      return cached
     if not _buffer:
       return None
+    ts_ms = ts_unix_seconds * 1000
     last_at_or_before = None
     for t, v in _buffer:
       if t > ts_ms:
         break
       last_at_or_before = v
-    return last_at_or_before
+    if last_at_or_before is not None:
+      _start_price_cache[ts_unix_seconds] = last_at_or_before
+    else:
+      # New window: no tick at or before window_ts yet; use first tick in window
+      if now_sec - ts_unix_seconds <= _RECENT_WINDOW_SEC:
+        first_t, first_v = _buffer[0]
+        _start_price_cache[ts_unix_seconds] = first_v
+        last_at_or_before = first_v
+    cutoff = now_sec - _START_PRICE_CACHE_MAX_AGE_SEC
+    to_drop = [k for k in _start_price_cache if k < cutoff]
+    for k in to_drop:
+      del _start_price_cache[k]
+  return last_at_or_before

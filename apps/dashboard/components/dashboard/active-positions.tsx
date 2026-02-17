@@ -10,6 +10,31 @@ import { CaretUpIcon, CaretDownIcon } from "@phosphor-icons/react";
 
 const MOBILE_BREAKPOINT = "(max-width: 1023px)";
 
+const SIGNAL_SHORT: Record<string, string> = {
+  "last second": "LS",
+  "last_second": "LS",
+  mispricing_arb: "MArb",
+  mispricing_one_sided: "MOS",
+  whale: "W",
+  imbalance: "I",
+  momentum: "Mom",
+  combined: "Comb",
+  iceberg: "Ice",
+  sweep: "Sw",
+  spoof: "Sp",
+  layering: "Lay",
+};
+
+function shortSignal(value: string): string {
+  if (!value) return value;
+  const lower = value.toLowerCase();
+  if (SIGNAL_SHORT[lower]) return SIGNAL_SHORT[lower];
+  return value
+    .split("+")
+    .map((part) => SIGNAL_SHORT[part.trim().toLowerCase()] ?? part.trim().slice(0, 2))
+    .join("+");
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -196,7 +221,7 @@ export function ActivePositions({ trades, filter }: ActivePositionsProps) {
                     </Badge>
                   </td>
                   <td className="max-w-[100px] truncate py-1.5 pr-3 text-muted-foreground" title={[t.signalType, t.strategy].filter(Boolean).join(" / ") || undefined}>
-                    {t.signalType ?? t.strategy ?? "—"}
+                    {(t.signalType ?? t.strategy) ? shortSignal(t.signalType ?? t.strategy ?? "") : "—"}
                   </td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">
                     {t.price.toFixed(2)}
