@@ -59,7 +59,6 @@ def _on_message(_: Any, message: str) -> None:
             _buffer.append((ts_ms, v))
             _buffer.sort(key=lambda x: x[0])
             _evict_old(ts_ms)
-      logger.debug(f"RTDS (15min): BTC ${float(value):,.2f}")
   except Exception as e:
     logger.debug(f"RTDS parse error: {e}")
 

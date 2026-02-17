@@ -175,6 +175,8 @@ def _on_message(_: Any, message: str) -> None:
     return
   try:
     data = json.loads(message)
+    if not isinstance(data, dict):
+      return
     event_type = data.get("event_type")
     if event_type != "book":
       return

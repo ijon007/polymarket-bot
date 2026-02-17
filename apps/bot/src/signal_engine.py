@@ -258,8 +258,10 @@ def _run_tick(market: Optional[Dict[str, Any]]) -> None:
     layers = 0
 
   if direction is None or layers < 2:
+    btc_spot = get_latest_btc_usd()
+    btc_str = f"BTC ${btc_spot:,.2f}" if btc_spot is not None else "BTC=None"
     logger.debug(
-      f"Signal engine: no combined entry | P2={p2} P3={p3_dir} P4={p4_dir} layers={layers} | {slug}"
+      f"Signal engine: no combined entry | {btc_str} | P2={p2} P3={p3_dir} P4={p4_dir} layers={layers} | {slug}"
     )
     return
 
