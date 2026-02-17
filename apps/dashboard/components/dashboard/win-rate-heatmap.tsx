@@ -133,7 +133,7 @@ export function WinRateHeatmap() {
 
       {/* Single grid: col 0 = day labels, cols 1–12 = heatmap, row 8 = hour labels */}
       <div
-        className="min-h-0 flex-1 overflow-auto px-4 py-3"
+        className="min-h-0 flex-1 overflow-auto px-4 py-3 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
         onMouseMove={(e) => {
           if (hover !== null) setTooltipPos({ x: e.clientX, y: e.clientY });
         }}

@@ -1,6 +1,7 @@
 """
 Settlement: check resolved markets and calculate realized P&L for trades.
-Uses RTDS (Chainlink) when available to settle as soon as the 5min window ends.
+CLOB-first: use get_notifications (type 4 Market Resolved) + get_trades for real trades.
+Fallback: RTDS (Chainlink) or Gamma API when CLOB has no resolution.
 """
 import re
 import time
@@ -8,7 +9,7 @@ from datetime import datetime, timezone
 import requests
 from loguru import logger
 
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple, Any, Dict, List
 
 from src.database import (
   is_db_configured,
@@ -131,6 +132,94 @@ def check_market_resolution(slug: str) -> dict:
   return {"resolved": False}
 
 
+def _resolve_from_clob_notifications() -> Tuple[Dict[str, str], List]:
+  """
+  Get market resolutions from CLOB notifications (type 4 = Market Resolved).
+  Returns (resolved, to_drop): resolved = condition_id -> outcome; to_drop = notification ids.
+  """
+  try:
+    from src.clob_client import get_notifications
+    notifs = get_notifications()
+  except Exception:
+    return {}, []
+
+  resolved: Dict[str, str] = {}
+  to_drop: List = []
+  for n in notifs or []:
+    if getattr(n, "type", n.get("type")) != 4:
+      continue
+    payload = getattr(n, "payload", n.get("payload")) or {}
+    if not isinstance(payload, dict):
+      continue
+    cond = payload.get("condition_id") or payload.get("conditionId") or payload.get("market")
+    outcome_raw = payload.get("outcome") or payload.get("winner")
+    if not cond or not outcome_raw:
+      continue
+    outcome = "YES" if str(outcome_raw).upper() in ("YES", "1", "UP") else "NO"
+    resolved[str(cond)] = outcome
+    nid = getattr(n, "id", n.get("id"))
+    if nid is not None:
+      to_drop.append(nid)
+  return resolved, to_drop
+
+
+def _compute_pnl_from_clob_trade(clob_trade: Any, market_outcome: str) -> float:
+  """
+  Compute PnL from a single CLOB Trade.
+  clob_trade has: outcome (YES/NO), side (BUY/SELL), size, price.
+  """
+  try:
+    size = float(clob_trade.get("size") or 0)
+    price = float(clob_trade.get("price") or 0)
+  except (TypeError, ValueError):
+    return 0.0
+  if size <= 0 or price <= 0:
+    return 0.0
+  side = str(clob_trade.get("side") or "").upper()
+  outcome = str(clob_trade.get("outcome") or "").upper()
+  if side != "BUY":
+    return 0.0
+  cost = size * price
+  if outcome == "YES":
+    if market_outcome == "YES":
+      return size * (1.0 - price)
+    return -cost
+  if outcome == "NO":
+    if market_outcome == "NO":
+      return size * (1.0 - price)
+    return -cost
+  return 0.0
+
+
+def _get_pnl_from_clob_trades(condition_id: str, market_outcome: str, our_order_id: str) -> Optional[float]:
+  """
+  Fetch our trades from CLOB for this market, match by order_id, sum PnL.
+  Returns total PnL or None if no matching trades (use DB fallback).
+  """
+  try:
+    from src.clob_client import get_trades
+    trades = get_trades(market=condition_id)
+  except Exception:
+    return None
+  if not trades:
+    return None
+  total = 0.0
+  matched = False
+  for t in trades:
+    taker_id = t.get("taker_order_id") or ""
+    maker_orders = t.get("maker_orders") or []
+    if taker_id == our_order_id:
+      total += _compute_pnl_from_clob_trade(t, market_outcome)
+      matched = True
+    else:
+      for mo in maker_orders:
+        if (mo.get("order_id") or "") == our_order_id:
+          total += _compute_pnl_from_clob_trade(t, market_outcome)
+          matched = True
+          break
+  return total if matched else None
+
+
 def calculate_trade_pnl(trade: Any, market_outcome: str) -> float:
   """
   Calculate actual P&L for a trade.
@@ -175,7 +264,8 @@ def calculate_trade_pnl(trade: Any, market_outcome: str) -> float:
 def settle_trades():
   """
   Check unsettled trades and calculate P&L for resolved markets.
-  Call periodically (e.g. every 60s).
+  CLOB-first: use get_notifications (type 4) + get_trades for real trades.
+  Fallback: RTDS or Gamma for resolution; calculate_trade_pnl for paper trades.
   """
   if not is_db_configured():
     return
@@ -184,12 +274,23 @@ def settle_trades():
   if not unsettled:
     return
 
-  slugs = set(t["market_ticker"] for t in unsettled if t.get("market_ticker") and t["market_ticker"] != "unknown")
+  clob_resolved, notif_ids_to_drop = _resolve_from_clob_notifications()
   settled_any = False
   now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
+  slugs = set(t["market_ticker"] for t in unsettled if t.get("market_ticker") and t["market_ticker"] != "unknown")
+
   for slug in slugs:
-    resolution = check_market_resolution(slug)
+    first_trade = next((t for t in unsettled if t.get("market_ticker") == slug), None)
+    if not first_trade:
+      continue
+    condition_id = first_trade.get("condition_id") or ""
+
+    resolution = None
+    if condition_id and condition_id in clob_resolved:
+      resolution = {"resolved": True, "outcome": clob_resolved[condition_id]}
+    if not resolution or not resolution["resolved"]:
+      resolution = check_market_resolution(slug)
     if not resolution["resolved"]:
       resolution = resolve_outcome_via_rtds(slug)
     if not resolution["resolved"]:
@@ -199,10 +300,9 @@ def settle_trades():
 
     existing = get_market_outcome_by_slug(slug)
     if not existing:
-      first_trade = next(t for t in unsettled if t.get("market_ticker") == slug)
       insert_market_outcome(
         slug=slug,
-        condition_id=first_trade.get("condition_id") or "",
+        condition_id=condition_id,
         outcome=outcome,
         resolved_at_ms=now_ms,
       )
@@ -211,7 +311,14 @@ def settle_trades():
       if trade.get("market_outcome"):
         continue
       settled_any = True
-      actual_pnl = calculate_trade_pnl(trade, outcome)
+
+      order_id = trade.get("polymarket_order_id")
+      if order_id and condition_id:
+        pnl_from_clob = _get_pnl_from_clob_trades(condition_id, outcome, order_id)
+        actual_pnl = pnl_from_clob if pnl_from_clob is not None else calculate_trade_pnl(trade, outcome)
+      else:
+        actual_pnl = calculate_trade_pnl(trade, outcome)
+
       status = "won" if actual_pnl > 0 else "lost"
       update_trade_settlement(
         trade_id=trade["_id"],
@@ -229,6 +336,13 @@ def settle_trades():
         f"P&L: ${actual_pnl:.2f} | "
         f"Status: {status.upper()}"
       )
+
+  if settled_any and notif_ids_to_drop:
+    try:
+      from src.clob_client import drop_notifications
+      drop_notifications(notif_ids_to_drop)
+    except Exception:
+      pass
 
   if settled_any:
     from src.utils.balance import get_current_balance
