@@ -18,6 +18,8 @@ const tradeInsertArgs = {
   reason: v.string(),
   executed_at: v.number(),
   status: v.string(),
+  polymarket_order_id: v.optional(v.string()),
+  transaction_hashes: v.optional(v.array(v.string())),
 };
 
 export const insert = mutation({

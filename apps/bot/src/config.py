@@ -8,7 +8,7 @@ CONVEX_URL = os.getenv("CONVEX_URL")
 DATABASE_URL = os.getenv("DATABASE_URL")  # legacy, unused when CONVEX_URL set
 
 # Trading
-PAPER_MODE = False
+PAPER_MODE = True
 BANKROLL = 1000.0
 DEFAULT_POSITION_SIZE = 1.0  # $1 per trade (simulate real-money scale)
 

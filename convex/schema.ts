@@ -22,6 +22,8 @@ export default defineSchema({
     market_outcome: v.optional(v.string()),
     actual_profit: v.optional(v.number()),
     settled_at: v.optional(v.number()),
+    polymarket_order_id: v.optional(v.string()),
+    transaction_hashes: v.optional(v.array(v.string())),
   })
     .index("by_market_ticker", ["market_ticker"])
     .index("by_status", ["status"])
