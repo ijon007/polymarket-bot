@@ -74,7 +74,7 @@ export default function Page() {
         {/* Layout: left sidebar | right (Charts, Positions, Logs) — scroll on mobile */}
         <div className="grid grid-cols-1 gap-2 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:grid-cols-12">
           {/* Left column: Account card, Bot Analytics, System Status */}
-          <aside className="flex flex-col gap-2 lg:col-span-3 lg:min-h-0 lg:overflow-y-auto">
+          <aside className="flex flex-col gap-2 lg:col-span-3 lg:min-h-0 lg:overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
               <AccountSummary />
