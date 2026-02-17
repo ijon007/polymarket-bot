@@ -23,7 +23,7 @@ from src.config import (
   MISPRICING_THRESHOLD,
   MOMENTUM_LOOKBACK,
 )
-from src.database import has_open_trade_for_market, list_last_5m_outcomes
+from src.database import has_open_trade_for_market, is_db_configured, list_last_5m_outcomes, update_system_status
 from src.quarter_executor import execute_signal_engine_trade
 from src.ws_polymarket import WhaleSignal, get_best_asks, get_imbalance_data, get_whale_signals
 from src.ws_rtds import get_btc_move_60s, get_latest_btc_usd
@@ -311,6 +311,8 @@ def run_loop() -> None:
   logger.info("15-min signal engine started (500ms loop)")
   tick_count = 0
   last_market_refresh = 0.0
+  last_status_update = 0.0
+  engine_start_time = time.time()
   market: Optional[Dict[str, Any]] = None
   last_slug = ""
 
@@ -328,6 +330,18 @@ def run_loop() -> None:
           if yes_id and no_id:
             ws_pm_start(yes_id, no_id)
         market = new_market
+
+      if now - last_status_update > 5.0:
+        last_status_update = now
+        update_system_status(
+          engine_state="SCANNING" if market else "IDLE",
+          uptime_seconds=int(now - engine_start_time),
+          scan_interval=900,
+          polymarket_ok=True,
+          db_ok=is_db_configured(),
+          rtds_ok=get_latest_btc_usd() is not None,
+          key="15min",
+        )
 
       _run_tick(market)
       tick_count += 1

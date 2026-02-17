@@ -18,9 +18,11 @@ except ImportError:
 
 from src.config import POLYMARKET_WS_URL
 
-_PING_INTERVAL = 10
+_PING_INTERVAL = 20
+_PING_TIMEOUT = 10
 _RECONNECT_DELAY = 5
 _MAX_RECONNECT_DELAY = 60
+_reconnect_delay = _RECONNECT_DELAY
 _SPOOF_WINDOW_SEC = 10
 _LAYERING_LEVELS = 5
 _LAYERING_SIZE_THRESHOLD = 50.0
@@ -236,12 +238,16 @@ def _on_close(_: Any, close_status_code: int, close_msg: str) -> None:
 
 
 def _on_open(ws: Any) -> None:
+  global _reconnect_delay
+  _reconnect_delay = _RECONNECT_DELAY
   if _subscribed_ids:
     sub = {"assets_ids": _subscribed_ids, "type": "market"}
     ws.send(json.dumps(sub))
     logger.info(f"Polymarket WS subscribed to {len(_subscribed_ids)} assets")
   else:
     logger.warning("Polymarket WS opened but no asset IDs to subscribe")
+  t = threading.Thread(target=_ping_loop, args=(ws,), daemon=True)
+  t.start()
 
 
 def _ping_loop(ws: Any) -> None:
@@ -254,8 +260,7 @@ def _ping_loop(ws: Any) -> None:
 
 
 def _run_loop() -> None:
-  global _ws
-  delay = _RECONNECT_DELAY
+  global _ws, _reconnect_delay
   while not _stop.is_set():
     try:
       if websocket is None:
@@ -270,13 +275,14 @@ def _run_loop() -> None:
         on_close=_on_close,
         on_open=_on_open,
       )
-      _ws.run_forever(ping_interval=None, ping_timeout=None)
+      _ws.run_forever(ping_interval=_PING_INTERVAL, ping_timeout=_PING_TIMEOUT)
     except Exception as e:
       logger.warning(f"Polymarket WS connection failed: {e}")
     if _stop.is_set():
       break
+    delay = _reconnect_delay
     time.sleep(delay)
-    delay = min(delay * 1.5, _MAX_RECONNECT_DELAY)
+    _reconnect_delay = min(_reconnect_delay * 1.5, _MAX_RECONNECT_DELAY)
   _ws = None
 
 

@@ -1,10 +1,11 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
-const KEY = "default";
+const DEFAULT_KEY = "default";
 
 export const upsert = mutation({
   args: {
+    key: v.optional(v.string()),
     engine_state: v.string(),
     uptime_seconds: v.number(),
     scan_interval: v.number(),
@@ -13,13 +14,14 @@ export const upsert = mutation({
     rtds_ok: v.boolean(),
   },
   handler: async (ctx, args) => {
+    const key = args.key ?? DEFAULT_KEY;
     const now = Math.floor(Date.now() / 1000);
     const existing = await ctx.db
       .query("system_status")
-      .withIndex("by_key", (q) => q.eq("key", KEY))
+      .withIndex("by_key", (q) => q.eq("key", key))
       .first();
     const doc = {
-      key: KEY,
+      key,
       engine_state: args.engine_state,
       uptime_seconds: args.uptime_seconds,
       scan_interval: args.scan_interval,
@@ -41,7 +43,14 @@ export const get = query({
   handler: async (ctx) => {
     return await ctx.db
       .query("system_status")
-      .withIndex("by_key", (q) => q.eq("key", KEY))
+      .withIndex("by_key", (q) => q.eq("key", DEFAULT_KEY))
       .first();
+  },
+});
+
+export const getAll = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("system_status").collect();
   },
 });

@@ -4,10 +4,11 @@ Separate process from the 5-min bot. Runs Polymarket WS, RTDS, and 500ms signal 
 """
 import signal
 import sys
+import time
 from loguru import logger
 
 from src.config import CONVEX_URL
-from src.database import init_db, is_db_configured, validate_db_schema
+from src.database import init_db, is_db_configured, update_system_status, validate_db_schema
 from src.log_buffer import start_log_buffer, stop_log_buffer
 from src.scanner_15min import fetch_btc_15min_market
 from src.signal_engine import run_loop, set_stop
@@ -56,10 +57,20 @@ def main() -> None:
     signal.signal(signal.SIGTERM, request_shutdown)
   signal.signal(signal.SIGINT, request_shutdown)
 
+  engine_start_time = time.time()
   try:
     run_loop()
   finally:
     logger.info("Shutting down 15-min engine...")
+    update_system_status(
+      engine_state="STOPPED",
+      uptime_seconds=int(time.time() - engine_start_time),
+      scan_interval=900,
+      polymarket_ok=False,
+      db_ok=is_db_configured(),
+      rtds_ok=False,
+      key="15min",
+    )
     ws_pm_stop()
     ws_rtds_stop()
     stop_log_buffer()

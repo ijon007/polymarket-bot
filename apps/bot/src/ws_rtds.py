@@ -21,9 +21,11 @@ _PING_INTERVAL = 6
 _PING_TIMEOUT = 3
 _RECONNECT_DELAY = 5
 _MAX_RECONNECT_DELAY = 60
+_RATE_LIMIT_BACKOFF_SEC = 60
 _BUFFER_MS = 10 * 60 * 1000  # 10 minutes
 
 _lock = threading.Lock()
+_rate_limited = False
 _latest_btc_usd: Optional[float] = None
 _latest_ts_ms: Optional[int] = None
 _buffer: List[Tuple[int, float]] = []
@@ -64,8 +66,12 @@ def _on_message(_: Any, message: str) -> None:
 
 
 def _on_error(_: Any, error: Exception) -> None:
+  global _rate_limited
   err_str = str(error).lower()
-  if "getaddrinfo failed" in err_str or "11001" in err_str:
+  if "429" in err_str or "too many requests" in err_str:
+    _rate_limited = True
+    logger.warning("RTDS rate limited (429); backing off before reconnect")
+  elif "getaddrinfo failed" in err_str or "11001" in err_str:
     logger.warning("RTDS WebSocket DNS/network error")
   else:
     logger.warning(f"RTDS WebSocket error: {error}")
@@ -91,7 +97,7 @@ def _on_open(ws: Any) -> None:
 
 
 def _run_loop() -> None:
-  global _ws
+  global _ws, _rate_limited
   delay = _RECONNECT_DELAY
   while not _stop.is_set():
     try:
@@ -110,6 +116,9 @@ def _run_loop() -> None:
       logger.warning(f"RTDS connection failed: {e}")
     if _stop.is_set():
       break
+    if _rate_limited:
+      delay = max(delay, _RATE_LIMIT_BACKOFF_SEC)
+      _rate_limited = False
     time.sleep(delay)
     delay = min(delay * 1.5, _MAX_RECONNECT_DELAY)
   _ws = None

@@ -6,7 +6,7 @@ Keeps a rolling buffer of (timestamp_ms, value) for start-price lookups.
 import json
 import threading
 import time
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -21,11 +21,13 @@ _PING_TIMEOUT = 3
 _RECONNECT_DELAY = 5
 _MAX_RECONNECT_DELAY = 60
 _BUFFER_MS = 10 * 60 * 1000  # 10 minutes
+_START_PRICE_CACHE_MAX_AGE_SEC = 30 * 60  # keep cached start prices for 30 min
 
 _lock = threading.Lock()
 _latest_btc_usd: Optional[float] = None
 _latest_ts_ms: Optional[int] = None
 _buffer: List[Tuple[int, float]] = []  # (ts_ms, value), ascending ts_ms
+_start_price_cache: Dict[int, float] = {}  # ts_unix_sec -> price; survives RTDS reconnect
 _ws: Optional["websocket.WebSocketApp"] = None
 _thread: Optional[threading.Thread] = None
 _stop = threading.Event()
@@ -156,16 +158,28 @@ def get_btc_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
   Return BTC price at the given Unix timestamp (seconds): last tick with timestamp <= T.
   Matches oracle semantics (price that was current at that moment). Returns None if we
   have no tick at or before T (e.g. we connected after that time).
+  Once we have a value for a timestamp we cache it so RTDS reconnect does not lose
+  the start price for the current 15-min window.
   """
   if ts_unix_seconds <= 0:
     return None
-  ts_ms = ts_unix_seconds * 1000
+  now_sec = int(time.time())
   with _lock:
+    cached = _start_price_cache.get(ts_unix_seconds)
+    if cached is not None:
+      return cached
     if not _buffer:
       return None
+    ts_ms = ts_unix_seconds * 1000
     last_at_or_before = None
     for t, v in _buffer:
       if t > ts_ms:
         break
       last_at_or_before = v
-    return last_at_or_before
+    if last_at_or_before is not None:
+      _start_price_cache[ts_unix_seconds] = last_at_or_before
+    cutoff = now_sec - _START_PRICE_CACHE_MAX_AGE_SEC
+    to_drop = [k for k in _start_price_cache if k < cutoff]
+    for k in to_drop:
+      del _start_price_cache[k]
+  return last_at_or_before
