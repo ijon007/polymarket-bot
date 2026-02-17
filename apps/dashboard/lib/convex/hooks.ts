@@ -9,6 +9,7 @@ import type {
   StreakGraph,
   StreakTradeEntry,
   SystemStatus,
+  SystemStatusEntry,
   TradeRow,
 } from "@/types/dashboard";
 import { mockAccount } from "@/lib/mock/account";
@@ -109,17 +110,24 @@ function formatUptime(seconds: number): string {
 export function usePositions(): TradeRow[] {
   const data = useQuery(api.trades.listForDashboard, {});
   if (data === undefined) return [];
-  return data.map((t) => ({
-    id: t._id,
-    market: t.market_ticker,
-    question: t.question ?? "",
-    side: t.side,
-    price: t.price ?? t.yes_price ?? t.no_price ?? 0,
-    size: t.size ?? t.position_size ?? 0,
-    pnl: t.actual_profit ?? 0,
-    status: t.status === "paper" ? ("paper" as const) : ("settled" as const),
-    executedAt: formatExecutedAtLocal(t.executed_at),
-  }));
+  return data.map((t) => {
+    const market = t.market_ticker ?? "";
+    const interval = market.includes("-15m-") ? ("15m" as const) : ("5m" as const);
+    return {
+      id: t._id,
+      market,
+      question: t.question ?? "",
+      side: t.side,
+      price: t.price ?? t.yes_price ?? t.no_price ?? 0,
+      size: t.size ?? t.position_size ?? 0,
+      pnl: t.actual_profit ?? 0,
+      status: t.status === "paper" ? ("paper" as const) : ("settled" as const),
+      executedAt: formatExecutedAtLocal(t.executed_at),
+      strategy: t.strategy,
+      signalType: t.signal_type,
+      interval,
+    };
+  });
 }
 
 export function useLogEntries(): LogEntry[] {
@@ -139,9 +147,7 @@ export function useLogEntries(): LogEntry[] {
   return entries;
 }
 
-export function useSystemStatus(): SystemStatus {
-  const data = useQuery(api.systemStatus.get, {});
-  if (!data) return mockSystemStatus;
+function toSystemStatus(data: { engine_state: string; polymarket_ok: boolean; db_ok: boolean; rtds_ok: boolean; uptime_seconds: number; scan_interval: number }): SystemStatus {
   return {
     engineState: data.engine_state as SystemStatus["engineState"],
     connections: [
@@ -152,4 +158,20 @@ export function useSystemStatus(): SystemStatus {
     uptime: formatUptime(data.uptime_seconds),
     scanInterval: data.scan_interval,
   };
+}
+
+export function useSystemStatus(): SystemStatus {
+  const data = useQuery(api.systemStatus.get, {});
+  if (!data) return mockSystemStatus;
+  return toSystemStatus(data);
+}
+
+export function useSystemStatusAll(): SystemStatusEntry[] {
+  const data = useQuery(api.systemStatus.getAll, {});
+  if (data === undefined || data.length === 0) return [];
+  const keys = ["5min", "15min"];
+  return data
+    .filter((d) => keys.includes(d.key))
+    .sort((a, b) => keys.indexOf(a.key) - keys.indexOf(b.key))
+    .map((d) => ({ key: d.key, status: toSystemStatus(d) }));
 }

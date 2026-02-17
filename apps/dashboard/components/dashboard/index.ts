@@ -1,7 +1,7 @@
 export { DashboardHeader } from "./dashboard-header";
 export { AccountSummary } from "./account-summary";
 export { ActivePositions } from "./active-positions";
-export { SystemStatus } from "./system-status";
+export { SystemStatus, SystemStatusAll } from "./system-status";
 export { ScanConfig } from "./scan-config";
 export { PerformanceStats } from "./performance-stats";
 export { LiveLogs } from "./live-logs";

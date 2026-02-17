@@ -40,6 +40,11 @@ export interface SystemStatus {
   scanInterval: number;
 }
 
+export interface SystemStatusEntry {
+  key: string;
+  status: SystemStatus;
+}
+
 export interface ScanConfig {
   minVolume: number;
   minLiquidity: number;
@@ -66,6 +71,9 @@ export interface TradeRow {
   pnl: number;
   status: "paper" | "settled";
   executedAt: string;
+  strategy?: string;
+  signalType?: string;
+  interval?: "5m" | "15m";
 }
 
 export interface MarketRow {
