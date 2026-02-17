@@ -24,6 +24,9 @@ export default defineSchema({
     settled_at: v.optional(v.number()),
     polymarket_order_id: v.optional(v.string()),
     transaction_hashes: v.optional(v.array(v.string())),
+    signal_type: v.optional(v.string()),
+    confidence_layers: v.optional(v.number()),
+    market_end_time: v.optional(v.number()),
   })
     .index("by_market_ticker", ["market_ticker"])
     .index("by_status", ["status"])

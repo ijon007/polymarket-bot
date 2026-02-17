@@ -36,6 +36,9 @@ def execute_trade(market, signal):
       "executed_at": datetime.now(timezone.utc).replace(tzinfo=None),
       "status": "paper",
     }
+    for k in ("signal_type", "confidence_layers", "market_end_time"):
+      if signal.get(k) is not None:
+        trade_data[k] = signal[k]
 
     logger.info(
       f"PAPER TRADE [ARBITRAGE]: "
@@ -66,6 +69,9 @@ def execute_trade(market, signal):
       "executed_at": datetime.now(timezone.utc).replace(tzinfo=None),
       "status": "paper",
     }
+    for k in ("signal_type", "confidence_layers", "market_end_time"):
+      if signal.get(k) is not None:
+        trade_data[k] = signal[k]
 
     logger.info(
       f"PAPER TRADE [{signal['strategy'].upper()}]: "

@@ -83,6 +83,14 @@ def _trade_to_convex_payload(data):
     payload["polymarket_order_id"] = safe.get("polymarket_order_id")
   if safe.get("transaction_hashes"):
     payload["transaction_hashes"] = list(safe.get("transaction_hashes"))
+  if safe.get("signal_type") is not None:
+    payload["signal_type"] = str(safe.get("signal_type"))
+  if safe.get("confidence_layers") is not None:
+    payload["confidence_layers"] = int(safe.get("confidence_layers"))
+  if safe.get("market_end_time") is not None:
+    payload["market_end_time"] = _to_ms(safe.get("market_end_time")) or int(
+      datetime.now(timezone.utc).timestamp() * 1000
+    )
   return payload
 
 
@@ -244,6 +252,21 @@ def list_settled_trades():
   try:
     return client.query("trades:listSettled", {})
   except Exception:
+    return []
+
+
+def list_last_5m_outcomes(limit: int = 3):
+  """
+  Return last N resolved 5-min BTC outcomes for momentum signal.
+  Used by 15-min signal engine. Written by 5-min bot on settlement.
+  """
+  client = _get_client()
+  if not client:
+    return []
+  try:
+    return client.query("marketOutcomes:listLast5mOutcomes", {"limit": limit})
+  except Exception as e:
+    logger.debug(f"list_last_5m_outcomes failed: {e}")
     return []
 
 

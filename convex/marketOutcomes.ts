@@ -22,3 +22,17 @@ export const getBySlug = query({
       .first();
   },
 });
+
+/** Last N resolved 5-min BTC outcomes for momentum signal. Used by 15-min engine. */
+export const listLast5mOutcomes = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 3;
+    const all = await ctx.db.query("market_outcomes").collect();
+    const filtered = all
+      .filter((m) => m.slug.startsWith("btc-updown-5m-"))
+      .sort((a, b) => b.resolved_at - a.resolved_at)
+      .slice(0, limit);
+    return filtered;
+  },
+});
