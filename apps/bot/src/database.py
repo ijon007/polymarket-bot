@@ -61,7 +61,7 @@ def _trade_to_convex_payload(data):
   """Convert trade_data to Convex mutation args (executed_at as ms)."""
   safe = _sanitize_trade_data(data)
   executed_at = safe.get("executed_at")
-  return {
+  payload = {
     "market_ticker": safe.get("market_ticker") or "unknown",
     "condition_id": safe.get("condition_id") or "",
     "question": safe.get("question") or "",
@@ -79,6 +79,11 @@ def _trade_to_convex_payload(data):
     "executed_at": _to_ms(executed_at) or int(datetime.now(timezone.utc).timestamp() * 1000),
     "status": safe.get("status") or "paper",
   }
+  if safe.get("polymarket_order_id"):
+    payload["polymarket_order_id"] = safe.get("polymarket_order_id")
+  if safe.get("transaction_hashes"):
+    payload["transaction_hashes"] = list(safe.get("transaction_hashes"))
+  return payload
 
 
 # Legacy exports for settlement/balance - no-op when using Convex (they use helpers below)
