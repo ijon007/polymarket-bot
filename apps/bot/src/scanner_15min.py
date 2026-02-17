@@ -128,10 +128,23 @@ def fetch_btc_15min_market() -> Optional[Dict[str, Any]]:
       clob_ids = market.get("clobTokenIds", "")
       token_ids: Dict[str, str] = {}
       if clob_ids:
-        ids = clob_ids.split(",") if isinstance(clob_ids, str) else clob_ids
+        if isinstance(clob_ids, list) and len(clob_ids) >= 2:
+          ids = [str(x).strip() for x in clob_ids[:2]]
+        elif isinstance(clob_ids, str):
+          s = clob_ids.strip()
+          if s.startswith("["):
+            try:
+              parsed = json.loads(s)
+              ids = [str(x).strip() for x in parsed[:2]] if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError):
+              ids = [x.strip().strip('"') for x in s.split(",")][:2]
+          else:
+            ids = [x.strip().strip('"') for x in s.split(",")][:2]
+        else:
+          ids = []
         if len(ids) >= 2:
-          token_ids["yes"] = ids[0].strip()
-          token_ids["no"] = ids[1].strip()
+          token_ids["yes"] = ids[0]
+          token_ids["no"] = ids[1]
 
       start_price = get_btc_price_at_timestamp(window_ts)
       price_to_beat = f"${start_price:,.2f}" if start_price is not None else "N/A"
