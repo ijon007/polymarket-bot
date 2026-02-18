@@ -35,6 +35,7 @@ _thread: Optional[threading.Thread] = None
 _stop = threading.Event()
 _rtds_log_interval = 5.0  # seconds
 _last_rtds_log_time = 0.0
+_last_was_429 = False
 
 
 def _evict_old(buf: List[Tuple[int, float]], now_ms: int) -> None:
@@ -73,16 +74,27 @@ def _on_message(_, message: str) -> None:
       now_sec = time.time()
       if now_sec - _last_rtds_log_time >= _rtds_log_interval:
         with _lock:
-          parts = [f"{s.upper().replace('/USD','')}: ${_latest.get(s, 0):,.2f}" for s in _SYMBOLS]
-        logger.debug("RTDS: %s", " | ".join(parts))
+          def _fmt(sym: str) -> str:
+            label = sym.upper().replace("/USD", "")
+            v = _latest.get(sym)
+            if v is None or v == 0:
+              return f"{label}: N/A"
+            prec = 4 if sym == "xrp/usd" else 2
+            return f"{label}: ${v:,.{prec}f}"
+          parts = [_fmt(s) for s in _SYMBOLS]
+        logger.debug(f"RTDS: {' | '.join(parts)}")
         _last_rtds_log_time = now_sec
   except Exception as e:
     logger.debug(f"RTDS parse error: {e}")
 
 
 def _on_error(_, error: Exception) -> None:
+  global _last_was_429
   err_str = str(error).lower()
-  if "getaddrinfo failed" in err_str or "11001" in err_str or "name or service not known" in err_str:
+  if "429" in err_str or "too many requests" in err_str:
+    _last_was_429 = True
+    logger.warning("RTDS WebSocket 429 Too Many Requests — will back off before reconnect")
+  elif "getaddrinfo failed" in err_str or "11001" in err_str or "name or service not known" in err_str:
     logger.warning(
       f"RTDS WebSocket DNS/network error: cannot resolve {_WS_URL} — "
       "check internet, DNS, VPN/firewall, or try another network"
@@ -96,11 +108,11 @@ def _on_close(_, close_status_code, close_msg) -> None:
 
 
 def _on_open(ws: "websocket.WebSocketApp") -> None:
+  # Single subscription with no filter = receive all symbols (btc, eth, sol, xrp)
   sub = {
     "action": "subscribe",
     "subscriptions": [
-      {"topic": "crypto_prices_chainlink", "type": "*", "filters": f'{{"symbol":"{s}"}}'}
-      for s in _SYMBOLS
+      {"topic": "crypto_prices_chainlink", "type": "*", "filters": ""}
     ]
   }
   ws.send(json.dumps(sub))
@@ -108,7 +120,7 @@ def _on_open(ws: "websocket.WebSocketApp") -> None:
 
 
 def _run_loop() -> None:
-  global _ws
+  global _ws, _last_was_429
   delay = _RECONNECT_DELAY
   last_ping = 0.0
   while not _stop.is_set():
@@ -131,6 +143,9 @@ def _run_loop() -> None:
       logger.warning(f"RTDS connection failed: {e}")
     if _stop.is_set():
       break
+    if _last_was_429:
+      delay = 30
+      _last_was_429 = False
     time.sleep(delay)
     delay = min(delay * 1.5, _MAX_RECONNECT_DELAY)
   _ws = None

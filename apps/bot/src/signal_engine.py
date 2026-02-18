@@ -28,6 +28,14 @@ from src.utils.rtds_client import (
 )
 
 _stop_event = threading.Event()
+_ob_skip_log_at: Dict[str, float] = {}  # slug -> last log time (throttle "stale or missing asks")
+_OB_SKIP_LOG_INTERVAL = 15.0
+# Off-window: only log throttled skip + live prices; approaching/in-window: normal logs
+_APPROACH_SEC = 60  # warn when within this many sec of 4min window (240 < sec_left <= 240 + 60)
+_OFF_WINDOW_LOG_INTERVAL = 30.0
+_APPROACH_WARNING_INTERVAL = 10.0
+_last_off_window_log = 0.0
+_last_approach_warning = 0.0
 
 
 def set_stop() -> None:
@@ -42,6 +50,20 @@ def _size_by_time(seconds_left: int) -> float:
   if seconds_left > 120:
     return LATE_ENTRY_SIZE_180_120
   return LATE_ENTRY_SIZE_120_0
+
+
+def _live_prices_str() -> str:
+  """One-line live prices for BTC, ETH, SOL, XRP."""
+  btc = get_latest_btc_usd()
+  eth = get_latest_eth_usd()
+  sol = get_latest_sol_usd()
+  xrp = get_latest_xrp_usd()
+  parts = []
+  parts.append(f"BTC ${btc:,.2f}" if btc is not None else "BTC N/A")
+  parts.append(f"ETH ${eth:,.2f}" if eth is not None else "ETH N/A")
+  parts.append(f"SOL ${sol:,.2f}" if sol is not None else "SOL N/A")
+  parts.append(f"XRP ${xrp:,.4f}" if xrp is not None else "XRP N/A")
+  return " | ".join(parts)
 
 
 def _run_tick(market: Optional[Dict[str, Any]]) -> None:
@@ -70,7 +92,11 @@ def _run_tick(market: Optional[Dict[str, Any]]) -> None:
   yes_ask, no_ask = get_best_asks(yes_id, no_id)
   _, _, ob_stale = get_imbalance_data(yes_id, no_id)
   if ob_stale or yes_ask is None or no_ask is None:
-    logger.debug("Signal engine: order book stale or missing asks, skip tick")
+    now = time.time()
+    if now - _ob_skip_log_at.get(slug, 0) >= _OB_SKIP_LOG_INTERVAL:
+      _ob_skip_log_at[slug] = now
+      reason = "stale" if ob_stale else ("missing yes_ask" if yes_ask is None else "missing no_ask")
+      logger.debug(f"Signal engine: order book {reason}, skip tick | {slug}")
     return
 
   if yes_ask > no_ask:
@@ -116,6 +142,7 @@ def _run_tick(market: Optional[Dict[str, Any]]) -> None:
 
 def run_loop() -> None:
   """Main 500ms loop. Fetches 15-min markets (BTC, ETH, SOL, XRP), runs tick per market."""
+  global _last_off_window_log, _last_approach_warning
   from src.scanner_15min import fetch_15min_markets
   from src.settlement import settle_trades
   from src.ws_polymarket import start as ws_pm_start
@@ -167,13 +194,44 @@ def run_loop() -> None:
           key="15min",
         )
 
-      no_start_slugs = [m.get("slug") for m in markets if m.get("start_price") is None]
-      if no_start_slugs:
-        logger.debug(
-          "Signal engine: skip %d markets (no start price yet): %s",
-          len(no_start_slugs),
-          no_start_slugs,
-        )
+      # Markets with start_price: compute if we're in 4min window or approaching
+      ready = [m for m in markets if m.get("start_price") is not None]
+      in_window = any(
+        0 < m.get("seconds_left", 0) <= LATE_ENTRY_WINDOW_SEC for m in ready
+      )
+      min_sec = min(
+        (m.get("seconds_left", 999999) for m in ready), default=999999
+      )
+      approaching = (
+        LATE_ENTRY_WINDOW_SEC < min_sec
+        <= LATE_ENTRY_WINDOW_SEC + _APPROACH_SEC
+        and not in_window
+      )
+      off_window = not in_window and len(ready) > 0
+
+      # Off-window: one throttled line (skip + live prices). Approaching: warnings. In-window: normal logs.
+      if off_window:
+        if now - _last_off_window_log >= _OFF_WINDOW_LOG_INTERVAL:
+          _last_off_window_log = now
+          sec_until = min_sec - LATE_ENTRY_WINDOW_SEC if min_sec < 999999 else None
+          tail = f" | window in {sec_until}s" if sec_until is not None else ""
+          logger.info(
+            f"Skip - not in 4min trading window | {_live_prices_str()}{tail}"
+          )
+        if approaching and now - _last_approach_warning >= _APPROACH_WARNING_INTERVAL:
+          _last_approach_warning = now
+          logger.warning(
+            f"Approaching 4min trading window in {min_sec - LATE_ENTRY_WINDOW_SEC}s | {_live_prices_str()}"
+          )
+
+      # Only log "no start price" when in or approaching window to avoid log spam
+      if in_window or approaching:
+        no_start_slugs = [m.get("slug") for m in markets if m.get("start_price") is None]
+        if no_start_slugs:
+          logger.debug(
+            f"Signal engine: skip {len(no_start_slugs)} markets (no start price yet): {no_start_slugs}"
+          )
+
       for market in markets:
         if market.get("start_price") is not None:
           _run_tick(market)

@@ -15,6 +15,8 @@ from src.signal_engine import run_loop, set_stop
 from src.ws_polymarket import start as ws_pm_start, stop as ws_pm_stop
 from src.utils.rtds_client import start as rtds_start, stop as rtds_stop
 
+logger.level("BALANCE", no=22, color="<cyan>")
+
 
 def main() -> None:
   logger.info("=" * 60)

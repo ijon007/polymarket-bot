@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import requests
 from loguru import logger
 
-from src.config import LATE_ENTRY_15MIN_ASSETS
+from src.config import LATE_ENTRY_15MIN_ASSETS, LATE_ENTRY_WINDOW_SEC
 from src.utils.price_feed import (
   get_btc_price_at_timestamp,
   get_eth_price_at_timestamp,
@@ -196,15 +196,21 @@ def fetch_15min_markets(
         result.append(m)
     if result:
       sec_left = result[0].get("seconds_left", 0)
-      slugs = [m.get("slug", "") for m in result]
-      start_summary = ", ".join(
-        f"{m.get('slug', '').split('-')[0]}: ${m['start_price']:,.2f}" if m.get("start_price") is not None
-        else f"{m.get('slug', '').split('-')[0]}: N/A"
-        for m in result
-      )
-      logger.info(
-        f"15min ACTIVE: {', '.join(slugs)} | Start: {start_summary} | {sec_left}s left"
-      )
+      # Only log when in or approaching 4min window to avoid filling logs when off-window
+      in_or_approaching = 0 < sec_left <= LATE_ENTRY_WINDOW_SEC + 60
+      if in_or_approaching:
+        slugs = [m.get("slug", "") for m in result]
+        def _start_str(m: Dict[str, Any]) -> str:
+          asset = (m.get("slug") or "").split("-")[0].lower()
+          sp = m.get("start_price")
+          if sp is None:
+            return f"{asset}: N/A"
+          prec = 4 if asset == "xrp" else 2
+          return f"{asset}: ${sp:,.{prec}f}"
+        start_summary = ", ".join(_start_str(m) for m in result)
+        logger.info(
+          f"15min ACTIVE: {', '.join(slugs)} | Start: {start_summary} | {sec_left}s left"
+        )
       return result
 
   return []

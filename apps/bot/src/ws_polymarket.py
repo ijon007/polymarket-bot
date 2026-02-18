@@ -1,6 +1,7 @@
 """
 Polymarket WebSocket client for order book (15-min signal engine).
 Updates in-memory state on each book message. Used for imbalance only.
+Fetches REST snapshot on connect to avoid ~3s delay until first WS book (vs live page).
 """
 import json
 import threading
@@ -11,11 +12,15 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 try:
+  import requests
+except ImportError:
+  requests = None
+try:
   import websocket
 except ImportError:
   websocket = None
 
-from src.config import POLYMARKET_WS_URL
+from src.config import POLYMARKET_CLOB_HOST, POLYMARKET_WS_URL
 
 _PING_INTERVAL = 20
 _PING_TIMEOUT = 10
@@ -74,6 +79,53 @@ _ws: Optional[Any] = None
 _thread: Optional[threading.Thread] = None
 _stop = threading.Event()
 _subscribed_ids: List[str] = []
+_last_rest_fetch: Dict[str, float] = {}  # asset_id -> time, throttle on-demand REST
+_rest_fetch_interval = 5.0
+
+
+def _fetch_book_snapshot(asset_id: str) -> Optional[TokenBook]:
+  """Fetch order book snapshot from CLOB REST. Returns TokenBook or None."""
+  if not requests:
+    return None
+  try:
+    url = f"{POLYMARKET_CLOB_HOST.rstrip('/')}/book"
+    r = requests.get(url, params={"token_id": asset_id}, timeout=5)
+    r.raise_for_status()
+    data = r.json()
+    bids_raw = data.get("bids", [])
+    asks_raw = data.get("asks", [])
+    bids, asks = _order_book_levels(_parse_levels(bids_raw), _parse_levels(asks_raw))
+    best_bid = bids[0].price if bids else None
+    best_ask = asks[0].price if asks else None
+    return TokenBook(
+      asset_id=str(data.get("asset_id", asset_id)),
+      best_bid=best_bid,
+      best_ask=best_ask,
+      bids=bids[: _TOP_LEVELS + 2],
+      asks=asks[: _TOP_LEVELS + 2],
+      updated_at=time.time(),
+    )
+  except Exception as e:
+    logger.debug(f"REST book snapshot for {asset_id[:8]}... failed: {e}")
+    return None
+
+
+def _fill_books_from_rest() -> None:
+  """Pre-populate _books from REST so we're not ~3s behind live page waiting for first WS message."""
+  global _books, _stale
+  ids = list(_subscribed_ids)
+  if not ids:
+    return
+  filled = 0
+  for aid in ids:
+    book = _fetch_book_snapshot(aid)
+    if book:
+      with _lock:
+        _books[aid] = book
+        _stale = False
+      filled += 1
+  if filled:
+    logger.debug(f"Polymarket WS: filled {filled} books from REST snapshot")
 
 
 def _on_message(_: Any, message: str) -> None:
@@ -86,29 +138,57 @@ def _on_message(_: Any, message: str) -> None:
     data = json.loads(message)
     if not isinstance(data, dict):
       return
-    if data.get("event_type") != "book":
+    event_type = data.get("event_type")
+    now_ts = time.time()
+
+    if event_type == "book":
+      asset_id = str(data.get("asset_id", ""))
+      bids_raw = data.get("bids", data.get("buys", []))
+      asks_raw = data.get("asks", data.get("sells", []))
+      bids, asks = _order_book_levels(_parse_levels(bids_raw), _parse_levels(asks_raw))
+      best_bid = bids[0].price if bids else None
+      best_ask = asks[0].price if asks else None
+      new_book = TokenBook(
+        asset_id=asset_id,
+        best_bid=best_bid,
+        best_ask=best_ask,
+        bids=bids[: _TOP_LEVELS + 2],
+        asks=asks[: _TOP_LEVELS + 2],
+        updated_at=now_ts,
+      )
+      with _lock:
+        _books[asset_id] = new_book
+        _stale = False
       return
 
-    asset_id = str(data.get("asset_id", ""))
-    bids_raw = data.get("bids", data.get("buys", []))
-    asks_raw = data.get("asks", data.get("sells", []))
-    bids, asks = _order_book_levels(_parse_levels(bids_raw), _parse_levels(asks_raw))
-
-    best_bid = bids[0].price if bids else None
-    best_ask = asks[0].price if asks else None
-
-    new_book = TokenBook(
-      asset_id=asset_id,
-      best_bid=best_bid,
-      best_ask=best_ask,
-      bids=bids[: _TOP_LEVELS + 2],
-      asks=asks[: _TOP_LEVELS + 2],
-      updated_at=time.time(),
-    )
-
-    with _lock:
-      _books[asset_id] = new_book
-      _stale = False
+    if event_type == "price_change":
+      for pc in data.get("price_changes", []):
+        aid = str(pc.get("asset_id", ""))
+        if not aid:
+          continue
+        try:
+          best_bid = float(pc.get("best_bid", 0)) or None
+          best_ask = float(pc.get("best_ask", 0)) or None
+        except (TypeError, ValueError):
+          best_bid = best_ask = None
+        with _lock:
+          existing = _books.get(aid)
+          if existing:
+            if best_bid is not None:
+              existing.best_bid = best_bid
+            if best_ask is not None:
+              existing.best_ask = best_ask
+            existing.updated_at = now_ts
+          else:
+            _books[aid] = TokenBook(
+              asset_id=aid,
+              best_bid=best_bid,
+              best_ask=best_ask,
+              bids=[],
+              asks=[],
+              updated_at=now_ts,
+            )
+          _stale = False
   except Exception as e:
     logger.debug(f"Polymarket WS parse error: {e}")
 
@@ -135,6 +215,8 @@ def _on_open(ws: Any) -> None:
     sub = {"assets_ids": _subscribed_ids, "type": "market"}
     ws.send(json.dumps(sub))
     logger.info(f"Polymarket WS subscribed to {len(_subscribed_ids)} assets")
+    # Pre-fill books from REST so we're not ~3s behind live page waiting for first WS book
+    threading.Thread(target=_fill_books_from_rest, daemon=True).start()
   else:
     logger.warning("Polymarket WS opened but no asset IDs to subscribe")
   t = threading.Thread(target=_ping_loop, args=(ws,), daemon=True)
@@ -201,7 +283,10 @@ def start(
     _subscribed_ids = [yes_token_id, no_token_id]
   else:
     _subscribed_ids = []
-  _books = {}
+  # Keep books for still-subscribed IDs so ticks don't see empty books after reconnect
+  subscribed_set = set(_subscribed_ids)
+  with _lock:
+    _books = {k: v for k, v in _books.items() if k in subscribed_set}
   if _thread is not None and _thread.is_alive():
     return
   _stop.clear()
@@ -226,12 +311,42 @@ def get_best_asks(
   yes_id: Optional[str] = None,
   no_id: Optional[str] = None,
 ) -> Tuple[Optional[float], Optional[float]]:
-  """Return (yes_ask, no_ask). If yes_id/no_id omitted and single-market, uses subscribed pair."""
-  with _lock:
-    if yes_id is not None and no_id is not None:
+  """Return (yes_ask, no_ask). If yes_id/no_id omitted and single-market, uses subscribed pair.
+  On-demand REST fetch when a book is missing so we don't depend on async fill alone."""
+  if yes_id is not None and no_id is not None:
+    with _lock:
       yb = _books.get(yes_id)
       nb = _books.get(no_id)
-      return (yb.best_ask if yb else None, nb.best_ask if nb else None)
+      sub = set(_subscribed_ids)
+    now = time.time()
+    if yb is None and yes_id in sub:
+      with _lock:
+        last = _last_rest_fetch.get(yes_id, 0)
+      if now - last >= _rest_fetch_interval:
+        book = _fetch_book_snapshot(yes_id)
+        with _lock:
+          _last_rest_fetch[yes_id] = now
+          if book:
+            _books[yes_id] = book
+            yb = book
+      if yb is None:
+        with _lock:
+          yb = _books.get(yes_id)
+    if nb is None and no_id in sub:
+      with _lock:
+        last = _last_rest_fetch.get(no_id, 0)
+      if now - last >= _rest_fetch_interval:
+        book = _fetch_book_snapshot(no_id)
+        with _lock:
+          _last_rest_fetch[no_id] = now
+          if book:
+            _books[no_id] = book
+            nb = book
+      if nb is None:
+        with _lock:
+          nb = _books.get(no_id)
+    return (yb.best_ask if yb else None, nb.best_ask if nb else None)
+  with _lock:
     if len(_subscribed_ids) >= 2:
       yb = _books.get(_subscribed_ids[0])
       nb = _books.get(_subscribed_ids[1])
