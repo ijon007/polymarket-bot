@@ -43,10 +43,6 @@ STRATEGY_PRIORITY = ["last_second"]
 # --- 15-min signal engine (separate process, main_15min.py) ---
 MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "10.0"))
 IMBALANCE_THRESHOLD = float(os.getenv("IMBALANCE_THRESHOLD", "0.4"))
-MISPRICING_THRESHOLD = float(os.getenv("MISPRICING_THRESHOLD", "0.97"))
-MOMENTUM_LOOKBACK = int(os.getenv("MOMENTUM_LOOKBACK", "3"))
-LAST_SECOND_WINDOW = int(os.getenv("LAST_SECOND_WINDOW", "25"))
-KELLY_FRACTION = float(os.getenv("KELLY_FRACTION", "0.5"))
 POLYMARKET_WS_URL = os.getenv(
   "POLYMARKET_WS_URL", "wss://ws-subscriptions-clob.polymarket.com/ws/market"
 )

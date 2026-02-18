@@ -1,13 +1,12 @@
 """
-Polymarket WebSocket client for order book and whale detection.
-Used only by the 15-min signal engine. Updates in-memory state on each book message.
+Polymarket WebSocket client for order book (15-min signal engine).
+Updates in-memory state on each book message. Used for imbalance only.
 """
 import json
 import threading
 import time
-from collections import deque
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -23,9 +22,6 @@ _PING_TIMEOUT = 10
 _RECONNECT_DELAY = 5
 _MAX_RECONNECT_DELAY = 60
 _reconnect_delay = _RECONNECT_DELAY
-_SPOOF_WINDOW_SEC = 10
-_LAYERING_LEVELS = 5
-_LAYERING_SIZE_THRESHOLD = 50.0
 _TOP_LEVELS = 5
 
 
@@ -40,17 +36,15 @@ class TokenBook:
   asset_id: str
   best_bid: Optional[float] = None
   best_ask: Optional[float] = None
-  bids: List[OrderLevel] = field(default_factory=list)
-  asks: List[OrderLevel] = field(default_factory=list)
+  bids: List[OrderLevel] = None
+  asks: List[OrderLevel] = None
   updated_at: float = 0.0
 
-
-@dataclass
-class WhaleSignal:
-  signal_type: str  # iceberg, sweep, spoof, layering
-  direction: str  # YES or NO
-  opposite: bool  # True for spoof -> trade opposite
-  timestamp: float = 0.0
+  def __post_init__(self):
+    if self.bids is None:
+      self.bids = []
+    if self.asks is None:
+      self.asks = []
 
 
 def _parse_levels(raw: List[Dict[str, Any]]) -> List[OrderLevel]:
@@ -66,111 +60,18 @@ def _parse_levels(raw: List[Dict[str, Any]]) -> List[OrderLevel]:
   return out
 
 
-# In-memory state (thread-safe via lock)
 _lock = threading.Lock()
 _yes_book: Optional[TokenBook] = None
 _no_book: Optional[TokenBook] = None
-_whale_signals: List[WhaleSignal] = []
 _stale = True
-_prev_yes: Optional[TokenBook] = None
-_prev_no: Optional[TokenBook] = None
-_level_refill_count: Dict[str, int] = {}  # "asset_id:price" -> refill count
-_large_order_seen: Dict[str, float] = {}  # "asset_id:price" -> timestamp
 _ws: Optional[Any] = None
 _thread: Optional[threading.Thread] = None
 _stop = threading.Event()
 _subscribed_ids: List[str] = []
 
 
-def _detect_whale(
-  asset_id: str,
-  side: str,
-  new_book: TokenBook,
-  prev_book: Optional[TokenBook],
-) -> Optional[WhaleSignal]:
-  """Run whale detection. Returns signal if detected."""
-  now = time.time()
-
-  # Layering: 5+ levels above size threshold on one side
-  levels = new_book.asks if side == "ask" else new_book.bids
-  big_levels = [l for l in levels[: _LAYERING_LEVELS + 2] if l.size >= _LAYERING_SIZE_THRESHOLD]
-  if len(big_levels) >= _LAYERING_LEVELS:
-    return WhaleSignal(
-      signal_type="layering",
-      direction="YES" if asset_id == _subscribed_ids[0] else "NO",
-      opposite=False,
-      timestamp=now,
-    )
-
-  if prev_book is None:
-    return None
-
-  prev_levels = prev_book.asks if side == "ask" else prev_book.bids
-  new_levels = new_book.asks if side == "ask" else new_book.bids
-
-  # Sweep: 3+ levels consumed at once (size dropped significantly)
-  consumed = 0
-  for i, nl in enumerate(new_levels[:5]):
-    if i >= len(prev_levels):
-      break
-    pl = prev_levels[i]
-    if pl.price == nl.price and nl.size < pl.size * 0.5:
-      consumed += 1
-  if consumed >= 3:
-    return WhaleSignal(
-      signal_type="sweep",
-      direction="YES" if asset_id == _subscribed_ids[0] else "NO",
-      opposite=False,
-      timestamp=now,
-    )
-
-  # Iceberg: same level refills (size increases after drop)
-  for i, nl in enumerate(new_levels[:5]):
-    if i >= len(prev_levels):
-      continue
-    pl = prev_levels[i]
-    key = f"{asset_id}:{pl.price}"
-    if pl.price == nl.price:
-      if nl.size > pl.size * 1.1:
-        _level_refill_count[key] = _level_refill_count.get(key, 0) + 1
-        if _level_refill_count[key] >= 3:
-          return WhaleSignal(
-            signal_type="iceberg",
-            direction="YES" if asset_id == _subscribed_ids[0] else "NO",
-            opposite=False,
-            timestamp=now,
-          )
-      else:
-        _level_refill_count[key] = 0
-
-  # Spoof: large order appears then disappears in <10s
-  for nl in new_levels[:3]:
-    if nl.size >= _LAYERING_SIZE_THRESHOLD:
-      key = f"{asset_id}:{nl.price}"
-      _large_order_seen[key] = now
-  for pk, pt in list(_large_order_seen.items()):
-    if now - pt > _SPOOF_WINDOW_SEC:
-      del _large_order_seen[pk]
-    elif pk.startswith(asset_id + ":"):
-      # Check if this level disappeared
-      still_there = any(
-        abs(l.price - float(pk.split(":")[1])) < 0.001 and l.size >= _LAYERING_SIZE_THRESHOLD
-        for l in new_levels[:5]
-      )
-      if not still_there and now - pt < _SPOOF_WINDOW_SEC:
-        del _large_order_seen[pk]
-        return WhaleSignal(
-          signal_type="spoof",
-          direction="YES" if asset_id == _subscribed_ids[0] else "NO",
-          opposite=True,
-          timestamp=now,
-        )
-
-  return None
-
-
 def _on_message(_: Any, message: str) -> None:
-  global _yes_book, _no_book, _whale_signals, _stale, _prev_yes, _prev_no
+  global _yes_book, _no_book, _stale
   if not message or not message.strip():
     return
   if message == "PONG":
@@ -179,8 +80,7 @@ def _on_message(_: Any, message: str) -> None:
     data = json.loads(message)
     if not isinstance(data, dict):
       return
-    event_type = data.get("event_type")
-    if event_type != "book":
+    if data.get("event_type") != "book":
       return
 
     asset_id = str(data.get("asset_id", ""))
@@ -202,20 +102,9 @@ def _on_message(_: Any, message: str) -> None:
     )
 
     with _lock:
-      is_yes = len(_subscribed_ids) >= 1 and asset_id == _subscribed_ids[0]
-      is_no = len(_subscribed_ids) >= 2 and asset_id == _subscribed_ids[1]
-      prev = _prev_yes if is_yes else (_prev_no if is_no else None)
-      if is_yes or is_no:
-        sig = _detect_whale(asset_id, "ask", new_book, prev)
-        if sig:
-          _whale_signals.append(sig)
-          if len(_whale_signals) > 20:
-            _whale_signals.pop(0)
-      if is_yes:
-        _prev_yes = _yes_book
+      if len(_subscribed_ids) >= 1 and asset_id == _subscribed_ids[0]:
         _yes_book = new_book
-      elif is_no:
-        _prev_no = _no_book
+      elif len(_subscribed_ids) >= 2 and asset_id == _subscribed_ids[1]:
         _no_book = new_book
       _stale = False
   except Exception as e:
@@ -288,12 +177,10 @@ def _run_loop() -> None:
 
 def start(yes_token_id: str, no_token_id: str) -> None:
   """Start Polymarket WS and subscribe to YES/NO token order books."""
-  global _thread, _subscribed_ids, _yes_book, _no_book, _prev_yes, _prev_no
+  global _thread, _subscribed_ids, _yes_book, _no_book
   _subscribed_ids = [yes_token_id, no_token_id]
   _yes_book = None
   _no_book = None
-  _prev_yes = None
-  _prev_no = None
   if _thread is not None and _thread.is_alive():
     return
   _stop.clear()
@@ -314,43 +201,18 @@ def stop() -> None:
     _ws = None
 
 
-def get_order_book_state() -> Tuple[
-  Optional[float], Optional[float],
-  List[OrderLevel], List[OrderLevel],
-  List[OrderLevel], List[OrderLevel],
-  List[WhaleSignal], bool,
-]:
-  """
-  Return (yes_ask, no_ask, yes_asks, no_asks, yes_bids, no_bids, whale_signals, stale).
-  """
-  with _lock:
-    stale = _stale
-    signals = list(_whale_signals)
-    yes_ask = _yes_book.best_ask if _yes_book else None
-    no_ask = _no_book.best_ask if _no_book else None
-    yes_asks = list(_yes_book.asks[:_TOP_LEVELS]) if _yes_book else []
-    no_asks = list(_no_book.asks[:_TOP_LEVELS]) if _no_book else []
-    yes_bids = list(_yes_book.bids[:_TOP_LEVELS]) if _yes_book else []
-    no_bids = list(_no_book.bids[:_TOP_LEVELS]) if _no_book else []
-  return yes_ask, no_ask, yes_asks, no_asks, yes_bids, no_bids, signals, stale
-
-
-def get_best_asks() -> Tuple[Optional[float], Optional[float]]:
-  """Convenience: return (yes_ask, no_ask) only."""
+def get_best_asks() -> tuple[Optional[float], Optional[float]]:
+  """Return (yes_ask, no_ask)."""
   with _lock:
     yes = _yes_book.best_ask if _yes_book else None
     no = _no_book.best_ask if _no_book else None
   return yes, no
 
 
-def get_imbalance_data() -> Tuple[float, float, bool]:
+def get_imbalance_data() -> tuple[float, float, bool]:
   """
   Return (bid_volume, ask_volume, stale) for top 5 levels aggregated across YES+NO.
-  bid_volume = sum of size at top 5 bid levels (YES bids + NO bids, but for binary
-  YES bid ~ buy YES, NO bid ~ buy NO; we want total liquidity each side).
-  For a single market with YES and NO tokens: bids on YES = people selling YES (bearish),
-  asks on YES = people selling YES (or we buy YES). Simpler: use YES book + NO book.
-  Imbalance = (bid_vol - ask_vol) / (bid_vol + ask_vol). Bids = buy pressure, asks = sell.
+  Imbalance = (bid_vol - ask_vol) / (bid_vol + ask_vol). Positive = more bid pressure.
   """
   with _lock:
     stale = _stale
@@ -367,9 +229,3 @@ def get_imbalance_data() -> Tuple[float, float, bool]:
       for l in _no_book.asks[:_TOP_LEVELS]:
         ask_vol += l.size
   return bid_vol, ask_vol, stale
-
-
-def get_whale_signals() -> List[WhaleSignal]:
-  """Return recent whale signals (caller consumes/copies)."""
-  with _lock:
-    return list(_whale_signals)

@@ -255,21 +255,6 @@ def list_settled_trades():
     return []
 
 
-def list_last_5m_outcomes(limit: int = 3):
-  """
-  Return last N resolved 5-min BTC outcomes for momentum signal.
-  Used by 15-min signal engine. Written by 5-min bot on settlement.
-  """
-  client = _get_client()
-  if not client:
-    return []
-  try:
-    return client.query("marketOutcomes:listLast5mOutcomes", {"limit": limit})
-  except Exception as e:
-    logger.debug(f"list_last_5m_outcomes failed: {e}")
-    return []
-
-
 def update_system_status(
   engine_state: str,
   uptime_seconds: int,
