@@ -6,7 +6,7 @@ import json
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -60,9 +60,15 @@ def _parse_levels(raw: List[Dict[str, Any]]) -> List[OrderLevel]:
   return out
 
 
+def _order_book_levels(bids: List[OrderLevel], asks: List[OrderLevel]) -> Tuple[List[OrderLevel], List[OrderLevel]]:
+  """Ensure bids desc (best first), asks asc (best first). Polymarket may send either order."""
+  bids_sorted = sorted(bids, key=lambda x: x.price, reverse=True)
+  asks_sorted = sorted(asks, key=lambda x: x.price)
+  return bids_sorted, asks_sorted
+
+
 _lock = threading.Lock()
-_yes_book: Optional[TokenBook] = None
-_no_book: Optional[TokenBook] = None
+_books: Dict[str, TokenBook] = {}
 _stale = True
 _ws: Optional[Any] = None
 _thread: Optional[threading.Thread] = None
@@ -71,7 +77,7 @@ _subscribed_ids: List[str] = []
 
 
 def _on_message(_: Any, message: str) -> None:
-  global _yes_book, _no_book, _stale
+  global _books, _stale
   if not message or not message.strip():
     return
   if message == "PONG":
@@ -86,8 +92,7 @@ def _on_message(_: Any, message: str) -> None:
     asset_id = str(data.get("asset_id", ""))
     bids_raw = data.get("bids", data.get("buys", []))
     asks_raw = data.get("asks", data.get("sells", []))
-    bids = _parse_levels(bids_raw)
-    asks = _parse_levels(asks_raw)
+    bids, asks = _order_book_levels(_parse_levels(bids_raw), _parse_levels(asks_raw))
 
     best_bid = bids[0].price if bids else None
     best_ask = asks[0].price if asks else None
@@ -96,16 +101,13 @@ def _on_message(_: Any, message: str) -> None:
       asset_id=asset_id,
       best_bid=best_bid,
       best_ask=best_ask,
-      bids=bids[:_TOP_LEVELS + 2],
-      asks=asks[:_TOP_LEVELS + 2],
+      bids=bids[: _TOP_LEVELS + 2],
+      asks=asks[: _TOP_LEVELS + 2],
       updated_at=time.time(),
     )
 
     with _lock:
-      if len(_subscribed_ids) >= 1 and asset_id == _subscribed_ids[0]:
-        _yes_book = new_book
-      elif len(_subscribed_ids) >= 2 and asset_id == _subscribed_ids[1]:
-        _no_book = new_book
+      _books[asset_id] = new_book
       _stale = False
   except Exception as e:
     logger.debug(f"Polymarket WS parse error: {e}")
@@ -175,18 +177,37 @@ def _run_loop() -> None:
   _ws = None
 
 
-def start(yes_token_id: str, no_token_id: str) -> None:
-  """Start Polymarket WS and subscribe to YES/NO token order books."""
-  global _thread, _subscribed_ids, _yes_book, _no_book
-  _subscribed_ids = [yes_token_id, no_token_id]
-  _yes_book = None
-  _no_book = None
+def start(
+  yes_token_id: Optional[str] = None,
+  no_token_id: Optional[str] = None,
+  markets: Optional[List[Dict[str, Any]]] = None,
+) -> None:
+  """
+  Start Polymarket WS and subscribe to order books.
+  Single-market: start(yes_token_id=..., no_token_id=...)
+  Multi-market: start(markets=[...]) - each market has tokens.yes, tokens.no
+  """
+  global _thread, _subscribed_ids, _books
+  if markets:
+    ids: List[str] = []
+    for m in markets:
+      tokens = m.get("tokens") or {}
+      yes_id = tokens.get("yes")
+      no_id = tokens.get("no")
+      if yes_id and no_id:
+        ids.extend([yes_id, no_id])
+    _subscribed_ids = ids
+  elif yes_token_id and no_token_id:
+    _subscribed_ids = [yes_token_id, no_token_id]
+  else:
+    _subscribed_ids = []
+  _books = {}
   if _thread is not None and _thread.is_alive():
     return
   _stop.clear()
   _thread = threading.Thread(target=_run_loop, daemon=True)
   _thread.start()
-  logger.info("Polymarket WS client started")
+  logger.info(f"Polymarket WS client started ({len(_subscribed_ids)} assets)")
 
 
 def stop() -> None:
@@ -201,31 +222,60 @@ def stop() -> None:
     _ws = None
 
 
-def get_best_asks() -> tuple[Optional[float], Optional[float]]:
-  """Return (yes_ask, no_ask)."""
+def get_best_asks(
+  yes_id: Optional[str] = None,
+  no_id: Optional[str] = None,
+) -> Tuple[Optional[float], Optional[float]]:
+  """Return (yes_ask, no_ask). If yes_id/no_id omitted and single-market, uses subscribed pair."""
   with _lock:
-    yes = _yes_book.best_ask if _yes_book else None
-    no = _no_book.best_ask if _no_book else None
-  return yes, no
+    if yes_id is not None and no_id is not None:
+      yb = _books.get(yes_id)
+      nb = _books.get(no_id)
+      return (yb.best_ask if yb else None, nb.best_ask if nb else None)
+    if len(_subscribed_ids) >= 2:
+      yb = _books.get(_subscribed_ids[0])
+      nb = _books.get(_subscribed_ids[1])
+      return (yb.best_ask if yb else None, nb.best_ask if nb else None)
+  return None, None
 
 
-def get_imbalance_data() -> tuple[float, float, bool]:
+def get_imbalance_data(
+  yes_id: Optional[str] = None,
+  no_id: Optional[str] = None,
+) -> Tuple[float, float, bool]:
   """
   Return (bid_volume, ask_volume, stale) for top 5 levels aggregated across YES+NO.
-  Imbalance = (bid_vol - ask_vol) / (bid_vol + ask_vol). Positive = more bid pressure.
+  If yes_id/no_id omitted and single-market, uses subscribed pair.
   """
   with _lock:
     stale = _stale
     bid_vol = 0.0
     ask_vol = 0.0
-    if _yes_book:
-      for l in _yes_book.bids[:_TOP_LEVELS]:
-        bid_vol += l.size
-      for l in _yes_book.asks[:_TOP_LEVELS]:
-        ask_vol += l.size
-    if _no_book:
-      for l in _no_book.bids[:_TOP_LEVELS]:
-        bid_vol += l.size
-      for l in _no_book.asks[:_TOP_LEVELS]:
-        ask_vol += l.size
+    yid = yes_id if yes_id is not None else (_subscribed_ids[0] if len(_subscribed_ids) >= 1 else None)
+    nid = no_id if no_id is not None else (_subscribed_ids[1] if len(_subscribed_ids) >= 2 else None)
+    for aid in (yid, nid):
+      if aid:
+        b = _books.get(aid)
+        if b:
+          for l in b.bids[:_TOP_LEVELS]:
+            bid_vol += l.size
+          for l in b.asks[:_TOP_LEVELS]:
+            ask_vol += l.size
   return bid_vol, ask_vol, stale
+
+
+def get_order_books_snapshot(
+  yes_id: Optional[str] = None,
+  no_id: Optional[str] = None,
+) -> Tuple[Optional[TokenBook], Optional[TokenBook], bool]:
+  """
+  Return (yes_book, no_book, stale) for inspection/logging.
+  If yes_id/no_id omitted and single-market, uses subscribed pair.
+  """
+  with _lock:
+    stale = _stale
+    yid = yes_id if yes_id is not None else (_subscribed_ids[0] if len(_subscribed_ids) >= 1 else None)
+    nid = no_id if no_id is not None else (_subscribed_ids[1] if len(_subscribed_ids) >= 2 else None)
+    yes = _books.get(yid) if yid else None
+    no = _books.get(nid) if nid else None
+  return yes, no, stale

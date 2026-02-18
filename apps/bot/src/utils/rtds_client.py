@@ -1,7 +1,7 @@
 """
-Polymarket RTDS WebSocket client for Chainlink BTC price.
-Subscribes to crypto_prices_chainlink (btc/usd) - same feed Polymarket uses for resolution.
-Keeps a rolling buffer of (timestamp_ms, value) for start-price lookups.
+Polymarket RTDS WebSocket client for Chainlink crypto prices (BTC, ETH, SOL, XRP).
+Subscribes to crypto_prices_chainlink - same feed Polymarket uses for resolution.
+Keeps per-symbol rolling buffers for start-price lookups.
 """
 import json
 import threading
@@ -24,44 +24,58 @@ _BUFFER_MS = 10 * 60 * 1000  # 10 minutes
 _START_PRICE_CACHE_MAX_AGE_SEC = 30 * 60  # keep cached start prices for 30 min
 _RECENT_WINDOW_SEC = 90  # for new window: if no tick at or before ts, use first tick in buffer
 
+_SYMBOLS = ("btc/usd", "eth/usd", "sol/usd", "xrp/usd")
+
 _lock = threading.Lock()
-_latest_btc_usd: Optional[float] = None
-_latest_ts_ms: Optional[int] = None
-_buffer: List[Tuple[int, float]] = []  # (ts_ms, value), ascending ts_ms
-_start_price_cache: Dict[int, float] = {}  # ts_unix_sec -> price; survives RTDS reconnect
+_latest: Dict[str, float] = {}  # symbol -> latest value
+_buffers: Dict[str, List[Tuple[int, float]]] = {s: [] for s in _SYMBOLS}
+_start_price_caches: Dict[str, Dict[int, float]] = {s: {} for s in _SYMBOLS}
 _ws: Optional["websocket.WebSocketApp"] = None
 _thread: Optional[threading.Thread] = None
 _stop = threading.Event()
+_rtds_log_interval = 5.0  # seconds
+_last_rtds_log_time = 0.0
 
 
-def _evict_old(now_ms: int) -> None:
-  global _buffer
+def _evict_old(buf: List[Tuple[int, float]], now_ms: int) -> None:
   cutoff = now_ms - _BUFFER_MS
-  _buffer = [(t, v) for t, v in _buffer if t >= cutoff]
+  buf[:] = [(t, v) for t, v in buf if t >= cutoff]
 
 
 def _on_message(_, message: str) -> None:
-  global _latest_btc_usd, _latest_ts_ms, _buffer
+  global _latest, _buffers, _last_rtds_log_time
   if not message or not message.strip():
     return
   try:
     data = json.loads(message)
     topic = data.get("topic")
     payload = data.get("payload") or {}
-    if topic == "crypto_prices_chainlink" and payload.get("symbol") == "btc/usd":
-      value = payload.get("value")
-      ts = payload.get("timestamp")
-      if value is not None:
-        v = float(value)
-        ts_ms = int(ts) if ts is not None else None
+    if topic != "crypto_prices_chainlink":
+      return
+    symbol = (payload.get("symbol") or "").strip().lower()
+    if symbol not in _SYMBOLS:
+      return
+    value = payload.get("value")
+    ts = payload.get("timestamp")
+    if value is not None:
+      v = float(value)
+      ts_ms = None
+      if ts is not None:
+        t = int(ts)
+        ts_ms = t * 1000 if t < 1_000_000_000_000 else t
+      with _lock:
+        _latest[symbol] = v
+        if ts_ms is not None:
+          buf = _buffers[symbol]
+          buf.append((ts_ms, v))
+          buf.sort(key=lambda x: x[0])
+          _evict_old(buf, ts_ms)
+      now_sec = time.time()
+      if now_sec - _last_rtds_log_time >= _rtds_log_interval:
         with _lock:
-          _latest_btc_usd = v
-          _latest_ts_ms = ts_ms
-          if ts_ms is not None:
-            _buffer.append((ts_ms, v))
-            _buffer.sort(key=lambda x: x[0])
-            _evict_old(ts_ms)
-      logger.debug(f"BTC price (RTDS): ${float(value):,.2f}")
+          parts = [f"{s.upper().replace('/USD','')}: ${_latest.get(s, 0):,.2f}" for s in _SYMBOLS]
+        logger.debug("RTDS: %s", " | ".join(parts))
+        _last_rtds_log_time = now_sec
   except Exception as e:
     logger.debug(f"RTDS parse error: {e}")
 
@@ -85,15 +99,12 @@ def _on_open(ws: "websocket.WebSocketApp") -> None:
   sub = {
     "action": "subscribe",
     "subscriptions": [
-      {
-        "topic": "crypto_prices_chainlink",
-        "type": "*",
-        "filters": '{"symbol":"btc/usd"}'
-      }
+      {"topic": "crypto_prices_chainlink", "type": "*", "filters": f'{{"symbol":"{s}"}}'}
+      for s in _SYMBOLS
     ]
   }
   ws.send(json.dumps(sub))
-  logger.info("RTDS subscribed to crypto_prices_chainlink (btc/usd)")
+  logger.info(f"RTDS subscribed to crypto_prices_chainlink: {', '.join(_SYMBOLS)}")
 
 
 def _run_loop() -> None:
@@ -151,7 +162,22 @@ def stop() -> None:
 def get_latest_btc_usd() -> Optional[float]:
   """Return latest BTC/USD from RTDS chainlink stream (thread-safe)."""
   with _lock:
-    return _latest_btc_usd
+    return _latest.get("btc/usd")
+
+
+def get_latest_eth_usd() -> Optional[float]:
+  with _lock:
+    return _latest.get("eth/usd")
+
+
+def get_latest_sol_usd() -> Optional[float]:
+  with _lock:
+    return _latest.get("sol/usd")
+
+
+def get_latest_xrp_usd() -> Optional[float]:
+  with _lock:
+    return _latest.get("xrp/usd")
 
 
 def get_btc_move_60s() -> Optional[float]:
@@ -159,54 +185,80 @@ def get_btc_move_60s() -> Optional[float]:
   Return BTC price change (as decimal, e.g. 0.003 = 0.3%) over last 60 seconds.
   Returns None if insufficient data.
   """
+  return _move_60s("btc/usd")
+
+
+def _move_60s(symbol: str) -> Optional[float]:
   now_ms = int(time.time() * 1000)
   cutoff_ms = now_ms - 60 * 1000
   with _lock:
-    if not _buffer or _latest_btc_usd is None:
+    buf = _buffers[symbol]
+    latest_v = _latest.get(symbol)
+    if not buf or latest_v is None:
       return None
     price_at_cutoff = None
-    for t, v in _buffer:
+    for t, v in buf:
       if t <= cutoff_ms:
         price_at_cutoff = v
       else:
         break
     if price_at_cutoff is None or price_at_cutoff <= 0:
       return None
-    return (_latest_btc_usd - price_at_cutoff) / price_at_cutoff
+    return (latest_v - price_at_cutoff) / price_at_cutoff
 
 
-def get_btc_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
+def _price_at_timestamp(symbol: str, ts_unix_seconds: int) -> Optional[float]:
   """
-  Return BTC price at the given Unix timestamp (seconds): last tick with timestamp <= T.
-  Matches oracle semantics (price that was current at that moment). Returns None if we
-  have no tick at or before T (e.g. we connected after that time).
-  For a new window (ts within RECENT_WINDOW_SEC of now) with no tick at or before ts,
-  use the first tick in buffer and cache it so the window gets a stable start price.
+  Return price at the given Unix timestamp (seconds): last tick with timestamp <= T.
+  Returns None if no data for this symbol yet. For a new window (ts within
+  RECENT_WINDOW_SEC of now) with no tick at or before ts, use the first tick in buffer.
   """
   if ts_unix_seconds <= 0:
     return None
   now_sec = int(time.time())
   with _lock:
-    cached = _start_price_cache.get(ts_unix_seconds)
+    cache = _start_price_caches[symbol]
+    buf = _buffers[symbol]
+    cached = cache.get(ts_unix_seconds)
     if cached is not None:
       return cached
-    if not _buffer:
+    if not buf:
       return None
     ts_ms = ts_unix_seconds * 1000
     last_at_or_before = None
-    for t, v in _buffer:
+    for t, v in buf:
       if t > ts_ms:
         break
       last_at_or_before = v
     if last_at_or_before is not None:
-      _start_price_cache[ts_unix_seconds] = last_at_or_before
+      cache[ts_unix_seconds] = last_at_or_before
     else:
       if now_sec - ts_unix_seconds <= _RECENT_WINDOW_SEC:
-        first_t, first_v = _buffer[0]
-        _start_price_cache[ts_unix_seconds] = first_v
+        first_v = buf[0][1]
+        cache[ts_unix_seconds] = first_v
         last_at_or_before = first_v
     cutoff = now_sec - _START_PRICE_CACHE_MAX_AGE_SEC
-    to_drop = [k for k in _start_price_cache if k < cutoff]
+    to_drop = [k for k in cache if k < cutoff]
     for k in to_drop:
-      del _start_price_cache[k]
+      del cache[k]
   return last_at_or_before
+
+
+def get_btc_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
+  """BTC price at Unix timestamp (seconds). None if no data yet."""
+  return _price_at_timestamp("btc/usd", ts_unix_seconds)
+
+
+def get_eth_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
+  """ETH price at Unix timestamp (seconds). None if no data yet."""
+  return _price_at_timestamp("eth/usd", ts_unix_seconds)
+
+
+def get_sol_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
+  """SOL price at Unix timestamp (seconds). None if no data yet."""
+  return _price_at_timestamp("sol/usd", ts_unix_seconds)
+
+
+def get_xrp_at_timestamp(ts_unix_seconds: int) -> Optional[float]:
+  """XRP price at Unix timestamp (seconds). None if no data yet."""
+  return _price_at_timestamp("xrp/usd", ts_unix_seconds)

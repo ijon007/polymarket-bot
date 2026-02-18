@@ -55,7 +55,7 @@ class LastSecondStrategy(BaseStrategy):
         start_source = "timestamp"
     if start_price is None:
       if window_start_ts is not None:
-        logger.debug(f"No RTDS start price for {slug} (joined mid-window, skipping this window)")
+        logger.debug(f"No RTDS start price for {slug} (no data yet, skipping this window)")
       else:
         logger.debug(f"No start price for {slug} (window_start_ts={window_start_ts})")
       return None

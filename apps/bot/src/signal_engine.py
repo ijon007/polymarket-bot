@@ -1,29 +1,33 @@
 """
 15-min signal engine. Runs every 500ms.
-Single signal: order book imbalance (30s rolling). No mispricing, whale, or 5-min momentum.
+Late Entry V3: enter last 4 min, buy favorite (higher ask = market consensus),
+require 30% gap, size by time remaining.
 """
 import threading
 import time
-from collections import deque
 from typing import Any, Dict, Optional
 
 from loguru import logger
 
-from src.config import IMBALANCE_THRESHOLD, MAX_POSITION_SIZE
+from src.config import (
+  LATE_ENTRY_MAX_PRICE,
+  LATE_ENTRY_MIN_GAP,
+  LATE_ENTRY_SIZE_120_0,
+  LATE_ENTRY_SIZE_180_120,
+  LATE_ENTRY_SIZE_240_180,
+  LATE_ENTRY_WINDOW_SEC,
+)
 from src.database import has_open_trade_for_market, is_db_configured, update_system_status
 from src.quarter_executor import execute_signal_engine_trade
-from src.ws_polymarket import get_imbalance_data
-from src.utils.rtds_client import get_btc_at_timestamp, get_btc_move_60s, get_latest_btc_usd
+from src.ws_polymarket import get_best_asks, get_imbalance_data
+from src.utils.rtds_client import (
+  get_latest_btc_usd,
+  get_latest_eth_usd,
+  get_latest_sol_usd,
+  get_latest_xrp_usd,
+)
 
-_IMBALANCE_SAMPLES = 60  # 60 * 500ms = 30s
-_imbalance_history: deque = deque(maxlen=_IMBALANCE_SAMPLES)
 _stop_event = threading.Event()
-
-# Last-second gate: block entry in the 40s–25s window unless BTC near strike or moved enough
-_LAST_SECOND_START = 40
-_LAST_SECOND_END = 25
-_STRIKE_NEAR_PCT = 0.002
-_BTC_MOVE_PCT = 0.003
 
 
 def set_stop() -> None:
@@ -31,45 +35,24 @@ def set_stop() -> None:
   _stop_event.set()
 
 
-def _position_size() -> float:
-  """Single signal = one layer; use full MAX_POSITION_SIZE or scale down as needed."""
-  return MAX_POSITION_SIZE
-
-
-def _imbalance_direction(imbalance_avg: float) -> Optional[str]:
-  """Order book imbalance. Returns YES (bullish) or NO (bearish) or None."""
-  if imbalance_avg > IMBALANCE_THRESHOLD:
-    return "YES"
-  if imbalance_avg < -IMBALANCE_THRESHOLD:
-    return "NO"
-  return None
-
-
-def _last_second_gate(
-  seconds_left: int,
-  btc_spot: Optional[float],
-  strike_price: Optional[float],
-) -> bool:
-  """
-  In the 40s–25s window: only allow if (a) BTC within 0.2% of strike, or
-  (b) BTC moved >0.3% in 60s. Returns True if entry allowed.
-  """
-  if seconds_left > _LAST_SECOND_START or seconds_left < _LAST_SECOND_END:
-    return True
-  if btc_spot is None or strike_price is None or strike_price <= 0:
-    return False
-  near_strike = abs(btc_spot - strike_price) / strike_price <= _STRIKE_NEAR_PCT
-  if near_strike:
-    return True
-  move = get_btc_move_60s()
-  if move is not None and abs(move) >= _BTC_MOVE_PCT:
-    return True
-  return False
+def _size_by_time(seconds_left: int) -> float:
+  """Size in USD by time bucket: 240-180 -> A, 180-120 -> B, 120-0 -> C."""
+  if seconds_left > 180:
+    return LATE_ENTRY_SIZE_240_180
+  if seconds_left > 120:
+    return LATE_ENTRY_SIZE_180_120
+  return LATE_ENTRY_SIZE_120_0
 
 
 def _run_tick(market: Optional[Dict[str, Any]]) -> None:
-  """Single 500ms tick. Only imbalance signal."""
+  """Single 500ms tick. Late Entry V3 only."""
   if market is None:
+    return
+
+  tokens = market.get("tokens") or {}
+  yes_id = tokens.get("yes")
+  no_id = tokens.get("no")
+  if not yes_id or not no_id:
     return
 
   slug = market.get("slug") or ""
@@ -77,35 +60,40 @@ def _run_tick(market: Optional[Dict[str, Any]]) -> None:
     logger.debug(f"Signal engine: skip {slug} (already have position)")
     return
 
-  bid_vol, ask_vol, ob_stale = get_imbalance_data()
-  if ob_stale:
-    logger.debug("Signal engine: order book stale, skip tick")
-    return
-
-  total_vol = bid_vol + ask_vol
-  if total_vol > 0:
-    imb = (bid_vol - ask_vol) / total_vol
-  else:
-    imb = 0.0
-  _imbalance_history.append(imb)
-  imbalance_avg = sum(_imbalance_history) / len(_imbalance_history) if _imbalance_history else imb
-
-  direction = _imbalance_direction(imbalance_avg)
-  if direction is None:
-    logger.debug(f"Signal engine: imbalance_avg={imbalance_avg:.3f} (no signal) | {slug}")
+  if market.get("start_price") is None:
     return
 
   seconds_left = market.get("seconds_left", 0)
-  strike = market.get("window_start_ts")
-  strike_price = get_btc_at_timestamp(strike) if strike is not None else None
-  btc_spot = get_latest_btc_usd()
-  if not _last_second_gate(seconds_left, btc_spot, strike_price):
-    logger.debug(f"Signal engine: last-second gate blocked | {seconds_left}s left | {slug}")
+  if seconds_left > LATE_ENTRY_WINDOW_SEC or seconds_left <= 0:
     return
 
-  action = "bet_yes" if direction == "YES" else "bet_no"
-  price = market.get("yes_price") if direction == "YES" else market.get("no_price")
-  size = _position_size()
+  yes_ask, no_ask = get_best_asks(yes_id, no_id)
+  _, _, ob_stale = get_imbalance_data(yes_id, no_id)
+  if ob_stale or yes_ask is None or no_ask is None:
+    logger.debug("Signal engine: order book stale or missing asks, skip tick")
+    return
+
+  if yes_ask > no_ask:
+    favorite = "YES"
+    favorite_ask = yes_ask
+  elif no_ask > yes_ask:
+    favorite = "NO"
+    favorite_ask = no_ask
+  else:
+    return
+
+  gap = abs(yes_ask - no_ask)
+  if gap < LATE_ENTRY_MIN_GAP:
+    logger.debug(f"Signal engine: gap={gap:.2f} < {LATE_ENTRY_MIN_GAP} | {slug}")
+    return
+
+  if favorite_ask > LATE_ENTRY_MAX_PRICE:
+    logger.debug(f"Signal engine: favorite ask {favorite_ask:.2f} > max {LATE_ENTRY_MAX_PRICE} | {slug}")
+    return
+
+  size = _size_by_time(seconds_left)
+  action = "bet_yes" if favorite == "YES" else "bet_no"
+  price = yes_ask if favorite == "YES" else no_ask
 
   signal = {
     "action": action,
@@ -113,61 +101,82 @@ def _run_tick(market: Optional[Dict[str, Any]]) -> None:
     "size": size,
     "expected_profit": size * 0.5,
     "confidence": 0.8,
-    "reason": f"imbalance={imbalance_avg:.3f} (threshold={IMBALANCE_THRESHOLD})",
+    "reason": f"late_entry_v3 favorite={favorite} gap={gap:.2f}",
   }
 
-  logger.info(f"SIGNAL IMBALANCE: {direction} | imb={imbalance_avg:.3f} | {slug}")
+  logger.info(f"SIGNAL LATE_ENTRY_V3: {favorite} | gap={gap:.2f} yes_ask={yes_ask:.2f} no_ask={no_ask:.2f} | {slug}")
   execute_signal_engine_trade(
     market,
     signal,
-    signal_type="imbalance",
+    signal_type="late_entry_v3",
     confidence_layers=1,
     market_end_time=market.get("end_date"),
   )
 
 
 def run_loop() -> None:
-  """Main 500ms loop. Fetches 15-min market, runs tick."""
-  from src.scanner_15min import fetch_btc_15min_market
+  """Main 500ms loop. Fetches 15-min markets (BTC, ETH, SOL, XRP), runs tick per market."""
+  from src.scanner_15min import fetch_15min_markets
   from src.settlement import settle_trades
   from src.ws_polymarket import start as ws_pm_start
 
-  logger.info("15-min signal engine started (500ms loop, imbalance-only)")
+  logger.info("15-min signal engine started (500ms loop, Late Entry V3)")
   tick_count = 0
   last_market_refresh = 0.0
   last_status_update = 0.0
   engine_start_time = time.time()
-  market: Optional[Dict[str, Any]] = None
-  last_slug = ""
+  markets: list = []
+  last_subscribed_ids: frozenset = frozenset()
 
   _stop_event.clear()
   while not _stop_event.is_set():
     try:
       now = time.time()
       if now - last_market_refresh > 5.0:
-        new_market = fetch_btc_15min_market()
+        new_markets = fetch_15min_markets()
         last_market_refresh = now
-        if new_market and new_market.get("slug") != last_slug:
-          last_slug = new_market.get("slug", "")
-          tokens = new_market.get("tokens") or {}
-          yes_id, no_id = tokens.get("yes"), tokens.get("no")
-          if yes_id and no_id:
-            ws_pm_start(yes_id, no_id)
-        market = new_market
+        new_ids = frozenset(
+          tid
+          for m in new_markets
+          for tid in ((m.get("tokens") or {}).get("yes"), (m.get("tokens") or {}).get("no"))
+          if tid
+        )
+        if new_ids != last_subscribed_ids:
+          last_subscribed_ids = new_ids
+          if new_markets:
+            ws_pm_start(markets=new_markets)
+        markets = new_markets
 
       if now - last_status_update > 5.0:
         last_status_update = now
         update_system_status(
-          engine_state="SCANNING" if market else "IDLE",
+          engine_state="SCANNING" if markets else "IDLE",
           uptime_seconds=int(now - engine_start_time),
           scan_interval=900,
           polymarket_ok=True,
           db_ok=is_db_configured(),
-          rtds_ok=get_latest_btc_usd() is not None,
+          rtds_ok=any(
+            f() is not None
+            for f in (
+              get_latest_btc_usd,
+              get_latest_eth_usd,
+              get_latest_sol_usd,
+              get_latest_xrp_usd,
+            )
+          ),
           key="15min",
         )
 
-      _run_tick(market)
+      no_start_slugs = [m.get("slug") for m in markets if m.get("start_price") is None]
+      if no_start_slugs:
+        logger.debug(
+          "Signal engine: skip %d markets (no start price yet): %s",
+          len(no_start_slugs),
+          no_start_slugs,
+        )
+      for market in markets:
+        if market.get("start_price") is not None:
+          _run_tick(market)
       tick_count += 1
       if tick_count % 200 == 0:
         settle_trades()

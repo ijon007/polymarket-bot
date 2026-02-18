@@ -10,7 +10,7 @@ from loguru import logger
 from src.config import CONVEX_URL
 from src.database import init_db, is_db_configured, update_system_status, validate_db_schema
 from src.log_buffer import start_log_buffer, stop_log_buffer
-from src.scanner_15min import fetch_btc_15min_market
+from src.scanner_15min import fetch_15min_markets
 from src.signal_engine import run_loop, set_stop
 from src.ws_polymarket import start as ws_pm_start, stop as ws_pm_stop
 from src.utils.rtds_client import start as rtds_start, stop as rtds_stop
@@ -18,7 +18,7 @@ from src.utils.rtds_client import start as rtds_start, stop as rtds_stop
 
 def main() -> None:
   logger.info("=" * 60)
-  logger.info("BTC 15-Minute Signal Engine")
+  logger.info("15-Minute Signal Engine (BTC, ETH, SOL, XRP)")
   logger.info("=" * 60)
 
   init_db()
@@ -37,18 +37,12 @@ def main() -> None:
   # Start RTDS for BTC price (same client as 5-min bot)
   rtds_start()
 
-  # Fetch 15-min market to get token IDs, then start Polymarket WS
-  market = fetch_btc_15min_market()
-  if market:
-    tokens = market.get("tokens") or {}
-    yes_id = tokens.get("yes")
-    no_id = tokens.get("no")
-    if yes_id and no_id:
-      ws_pm_start(yes_id, no_id)
-    else:
-      logger.warning("15-min market has no token IDs - order book unavailable")
+  # Fetch 15-min markets to get token IDs, then start Polymarket WS
+  markets = fetch_15min_markets()
+  if markets:
+    ws_pm_start(markets=markets)
   else:
-    logger.info("No active 15-min market - will retry when market appears")
+    logger.info("No active 15-min markets - will retry when markets appear")
 
   def request_shutdown(*_args) -> None:
     set_stop()
