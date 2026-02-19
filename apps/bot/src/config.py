@@ -10,7 +10,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")  # legacy, unused when CONVEX_URL set
 # Trading
 PAPER_MODE = True
 BANKROLL = 1000.0
-DEFAULT_POSITION_SIZE = 1.0  # $1 per trade (simulate real-money scale)
+DEFAULT_POSITION_SIZE = 10.0  # $1 per trade (simulate real-money scale)
 
 # CLOB (Polymarket) - required when PAPER_MODE=False
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")  # EOA private key (hex, with or without 0x)
@@ -48,13 +48,11 @@ LATE_ENTRY_15MIN_ASSETS = [
   for a in (os.getenv("LATE_ENTRY_15MIN_ASSETS") or "btc,eth,sol,xrp").split(",")
   if a.strip()
 ]
-# Late Entry V3: enter last 4 min, buy favorite (higher ask), require 30% gap
+# Late Entry V3: enter last 4 min, buy favorite (higher ask), flat size
 LATE_ENTRY_WINDOW_SEC = int(os.getenv("LATE_ENTRY_WINDOW_SEC", "240"))
-LATE_ENTRY_MIN_GAP = float(os.getenv("LATE_ENTRY_MIN_GAP", "0.30"))
-LATE_ENTRY_MAX_PRICE = float(os.getenv("LATE_ENTRY_MAX_PRICE", "0.92"))
-LATE_ENTRY_SIZE_240_180 = float(os.getenv("LATE_ENTRY_SIZE_240_180", "8.0"))
-LATE_ENTRY_SIZE_180_120 = float(os.getenv("LATE_ENTRY_SIZE_180_120", "10.0"))
-LATE_ENTRY_SIZE_120_0 = float(os.getenv("LATE_ENTRY_SIZE_120_0", "12.0"))
+LATE_ENTRY_MIN_GAP = float(os.getenv("LATE_ENTRY_MIN_GAP", "0.35"))
+LATE_ENTRY_MAX_PRICE = float(os.getenv("LATE_ENTRY_MAX_PRICE", "0.85"))
+LATE_ENTRY_SIZE = float(os.getenv("LATE_ENTRY_SIZE", "10.0"))
 POLYMARKET_WS_URL = os.getenv(
   "POLYMARKET_WS_URL", "wss://ws-subscriptions-clob.polymarket.com/ws/market"
 )

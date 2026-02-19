@@ -20,7 +20,7 @@ Enter only in the last 4 minutes. Follow the crowd: buy the side with the **high
 | 5    | **Max price:** skip if favorite's ask > 0.92 (avoid overpaying).             |
 
 
-**Config (env vars):** `LATE_ENTRY_WINDOW_SEC`, `LATE_ENTRY_MIN_GAP`, `LATE_ENTRY_MAX_PRICE`, `LATE_ENTRY_SIZE_240_180`, `LATE_ENTRY_SIZE_180_120`, `LATE_ENTRY_SIZE_120_0`.
+**Config (env vars):** `LATE_ENTRY_WINDOW_SEC`, `LATE_ENTRY_MIN_GAP`, `LATE_ENTRY_MAX_PRICE`, `LATE_ENTRY_SIZE`.
 
 **Inspect:** Run `python scripts/inspect_orderbook.py` to see live book and whether Late Entry would fire.
 

@@ -1,7 +1,7 @@
 """
 Polymarket RTDS WebSocket client for Chainlink crypto prices (BTC, ETH, SOL, XRP).
 Subscribes to crypto_prices_chainlink - same feed Polymarket uses for resolution.
-Keeps per-symbol rolling buffers for start-price lookups.
+Docs: https://docs.polymarket.com/market-data/websocket/rtds — PING every 5s to keep connection.
 """
 import json
 import threading
@@ -16,7 +16,7 @@ except ImportError:
   websocket = None
 
 _WS_URL = "wss://ws-live-data.polymarket.com"
-_PING_INTERVAL = 6
+_PING_INTERVAL = 5  # docs: "Send PING messages every 5 seconds to maintain the connection"
 _PING_TIMEOUT = 3
 _RECONNECT_DELAY = 5
 _MAX_RECONNECT_DELAY = 60
@@ -36,6 +36,7 @@ _stop = threading.Event()
 _rtds_log_interval = 5.0  # seconds
 _last_rtds_log_time = 0.0
 _last_was_429 = False
+_last_was_504 = False
 
 
 def _evict_old(buf: List[Tuple[int, float]], now_ms: int) -> None:
@@ -76,11 +77,11 @@ def _on_message(_, message: str) -> None:
         with _lock:
           def _fmt(sym: str) -> str:
             label = sym.upper().replace("/USD", "")
-            v = _latest.get(sym)
-            if v is None or v == 0:
+            vv = _latest.get(sym)
+            if vv is None or vv == 0:
               return f"{label}: N/A"
             prec = 4 if sym == "xrp/usd" else 2
-            return f"{label}: ${v:,.{prec}f}"
+            return f"{label}: ${vv:,.{prec}f}"
           parts = [_fmt(s) for s in _SYMBOLS]
         logger.debug(f"RTDS: {' | '.join(parts)}")
         _last_rtds_log_time = now_sec
@@ -89,11 +90,14 @@ def _on_message(_, message: str) -> None:
 
 
 def _on_error(_, error: Exception) -> None:
-  global _last_was_429
+  global _last_was_429, _last_was_504
   err_str = str(error).lower()
   if "429" in err_str or "too many requests" in err_str:
     _last_was_429 = True
     logger.warning("RTDS WebSocket 429 Too Many Requests — will back off before reconnect")
+  elif "504" in err_str or "gateway" in err_str and "time-out" in err_str:
+    _last_was_504 = True
+    logger.warning("RTDS WebSocket 504 Gateway Timeout — will back off before reconnect")
   elif "getaddrinfo failed" in err_str or "11001" in err_str or "name or service not known" in err_str:
     logger.warning(
       f"RTDS WebSocket DNS/network error: cannot resolve {_WS_URL} — "
@@ -108,7 +112,6 @@ def _on_close(_, close_status_code, close_msg) -> None:
 
 
 def _on_open(ws: "websocket.WebSocketApp") -> None:
-  # Single subscription with no filter = receive all symbols (btc, eth, sol, xrp)
   sub = {
     "action": "subscribe",
     "subscriptions": [
@@ -120,7 +123,7 @@ def _on_open(ws: "websocket.WebSocketApp") -> None:
 
 
 def _run_loop() -> None:
-  global _ws, _last_was_429
+  global _ws, _last_was_429, _last_was_504
   delay = _RECONNECT_DELAY
   last_ping = 0.0
   while not _stop.is_set():
@@ -146,6 +149,9 @@ def _run_loop() -> None:
     if _last_was_429:
       delay = 30
       _last_was_429 = False
+    elif _last_was_504:
+      delay = 20
+      _last_was_504 = False
     time.sleep(delay)
     delay = min(delay * 1.5, _MAX_RECONNECT_DELAY)
   _ws = None

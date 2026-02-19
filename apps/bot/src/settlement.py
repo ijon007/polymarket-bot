@@ -26,31 +26,70 @@ _WINNER_THRESHOLD = 0.98  # treat as resolved when winning side >= this
 _RTDS_SETTLE_BUFFER_SEC = 2  # seconds after window end before we resolve via RTDS (allow tick to arrive)
 
 
+_WINDOW_5M_SEC = 300
+_WINDOW_15M_SEC = 900
+
 def _parse_btc_5m_slug(slug: str) -> Tuple[Optional[int], Optional[int]]:
   """Parse btc-updown-5m-{window_start_ts}. Returns (window_start_ts, window_end_ts) or (None, None)."""
   m = re.match(r"btc-updown-5m-(\d+)$", slug or "")
   if not m:
     return None, None
   start_ts = int(m.group(1))
-  return start_ts, start_ts + 300
+  return start_ts, start_ts + _WINDOW_5M_SEC
+
+
+def _parse_15m_slug(slug: str) -> Tuple[Optional[str], Optional[int], Optional[int]]:
+  """Parse {asset}-updown-15m-{window_start_ts}. Returns (asset, window_start_ts, window_end_ts) or (None, None, None)."""
+  m = re.match(r"([a-z]+)-updown-15m-(\d+)$", (slug or "").strip().lower())
+  if not m:
+    return None, None, None
+  asset = m.group(1)
+  start_ts = int(m.group(2))
+  return asset, start_ts, start_ts + _WINDOW_15M_SEC
 
 
 def resolve_outcome_via_rtds(slug: str) -> dict:
   """
-  Resolve 5min BTC market outcome using RTDS (Chainlink) buffer.
-  Use as soon as window end time has passed so we don't wait for Polymarket API.
+  Resolve market outcome using RTDS (Chainlink) as soon as window end has passed.
+  Supports 5m BTC (btc-updown-5m-{ts}) and 15m BTC/ETH/SOL/XRP ({asset}-updown-15m-{ts}).
   Returns dict with resolved: bool, outcome: "YES"|"NO" (if resolved).
   """
-  window_start_ts, window_end_ts = _parse_btc_5m_slug(slug)
-  if window_start_ts is None or window_end_ts is None:
-    return {"resolved": False}
   now = time.time()
+  window_start_ts = None
+  window_end_ts = None
+  get_price_fn = None
+
+  start_ts_5m, end_ts_5m = _parse_btc_5m_slug(slug)
+  if start_ts_5m is not None and end_ts_5m is not None:
+    window_start_ts, window_end_ts = start_ts_5m, end_ts_5m
+    try:
+      from src.utils.rtds_client import get_btc_at_timestamp
+      get_price_fn = get_btc_at_timestamp
+    except Exception:
+      pass
+  else:
+    asset, start_ts_15, end_ts_15 = _parse_15m_slug(slug)
+    if asset is not None and start_ts_15 is not None and end_ts_15 is not None:
+      window_start_ts, window_end_ts = start_ts_15, end_ts_15
+      try:
+        from src.utils.rtds_client import (
+          get_btc_at_timestamp,
+          get_eth_at_timestamp,
+          get_sol_at_timestamp,
+          get_xrp_at_timestamp,
+        )
+        fns = {"btc": get_btc_at_timestamp, "eth": get_eth_at_timestamp, "sol": get_sol_at_timestamp, "xrp": get_xrp_at_timestamp}
+        get_price_fn = fns.get(asset)
+      except Exception:
+        pass
+
+  if window_start_ts is None or window_end_ts is None or get_price_fn is None:
+    return {"resolved": False}
   if now < window_end_ts + _RTDS_SETTLE_BUFFER_SEC:
     return {"resolved": False}
   try:
-    from src.utils.rtds_client import get_btc_at_timestamp
-    start_price = get_btc_at_timestamp(window_start_ts)
-    end_price = get_btc_at_timestamp(window_end_ts)
+    start_price = get_price_fn(window_start_ts)
+    end_price = get_price_fn(window_end_ts)
     if start_price is None or end_price is None:
       return {"resolved": False}
     outcome = "YES" if end_price >= start_price else "NO"
@@ -290,9 +329,9 @@ def settle_trades():
     if condition_id and condition_id in clob_resolved:
       resolution = {"resolved": True, "outcome": clob_resolved[condition_id]}
     if not resolution or not resolution["resolved"]:
-      resolution = check_market_resolution(slug)
-    if not resolution["resolved"]:
       resolution = resolve_outcome_via_rtds(slug)
+    if not resolution or not resolution["resolved"]:
+      resolution = check_market_resolution(slug)
     if not resolution["resolved"]:
       continue
 

@@ -1,7 +1,7 @@
 """
 15-min signal engine. Runs every 500ms.
 Late Entry V3: enter last 4 min, buy favorite (higher ask = market consensus),
-require 30% gap, size by time remaining.
+require min gap, flat size.
 """
 import threading
 import time
@@ -12,9 +12,7 @@ from loguru import logger
 from src.config import (
   LATE_ENTRY_MAX_PRICE,
   LATE_ENTRY_MIN_GAP,
-  LATE_ENTRY_SIZE_120_0,
-  LATE_ENTRY_SIZE_180_120,
-  LATE_ENTRY_SIZE_240_180,
+  LATE_ENTRY_SIZE,
   LATE_ENTRY_WINDOW_SEC,
 )
 from src.database import has_open_trade_for_market, is_db_configured, update_system_status
@@ -41,15 +39,6 @@ _last_approach_warning = 0.0
 def set_stop() -> None:
   """Signal the run loop to stop."""
   _stop_event.set()
-
-
-def _size_by_time(seconds_left: int) -> float:
-  """Size in USD by time bucket: 240-180 -> A, 180-120 -> B, 120-0 -> C."""
-  if seconds_left > 180:
-    return LATE_ENTRY_SIZE_240_180
-  if seconds_left > 120:
-    return LATE_ENTRY_SIZE_180_120
-  return LATE_ENTRY_SIZE_120_0
 
 
 def _live_prices_str() -> str:
@@ -117,7 +106,7 @@ def _run_tick(market: Optional[Dict[str, Any]]) -> None:
     logger.debug(f"Signal engine: favorite ask {favorite_ask:.2f} > max {LATE_ENTRY_MAX_PRICE} | {slug}")
     return
 
-  size = _size_by_time(seconds_left)
+  size = LATE_ENTRY_SIZE
   action = "bet_yes" if favorite == "YES" else "bet_no"
   price = yes_ask if favorite == "YES" else no_ask
 
@@ -236,8 +225,7 @@ def run_loop() -> None:
         if market.get("start_price") is not None:
           _run_tick(market)
       tick_count += 1
-      if tick_count % 200 == 0:
-        settle_trades()
+      settle_trades()
 
       time.sleep(0.5)
     except KeyboardInterrupt:
