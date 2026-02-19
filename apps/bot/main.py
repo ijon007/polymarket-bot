@@ -78,6 +78,7 @@ def main():
       polymarket_ok=polymarket_ok,
       db_ok=is_db_configured(),
       rtds_ok=False,
+      key="5min",
     )
     rtds_stop()
     logger.info("Running final settlement check...")
@@ -105,6 +106,7 @@ def main():
           polymarket_ok=polymarket_ok,
           db_ok=is_db_configured(),
           rtds_ok=get_latest_btc_usd() is not None,
+          key="5min",
         )
         time.sleep(30)
         continue
@@ -124,6 +126,7 @@ def main():
           polymarket_ok=polymarket_ok,
           db_ok=is_db_configured(),
           rtds_ok=get_latest_btc_usd() is not None,
+          key="5min",
         )
         time.sleep(SCAN_INTERVAL)
         continue
@@ -166,6 +169,7 @@ def main():
         polymarket_ok=polymarket_ok,
         db_ok=is_db_configured(),
         rtds_ok=get_latest_btc_usd() is not None,
+        key="5min",
       )
 
       time.sleep(SCAN_INTERVAL)
@@ -179,6 +183,7 @@ def main():
         polymarket_ok=False,
         db_ok=is_db_configured(),
         rtds_ok=get_latest_btc_usd() is not None,
+        key="5min",
       )
       time.sleep(30)
 

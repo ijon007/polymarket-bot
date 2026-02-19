@@ -83,6 +83,14 @@ def _trade_to_convex_payload(data):
     payload["polymarket_order_id"] = safe.get("polymarket_order_id")
   if safe.get("transaction_hashes"):
     payload["transaction_hashes"] = list(safe.get("transaction_hashes"))
+  if safe.get("signal_type") is not None:
+    payload["signal_type"] = str(safe.get("signal_type"))
+  if safe.get("confidence_layers") is not None:
+    payload["confidence_layers"] = int(safe.get("confidence_layers"))
+  if safe.get("market_end_time") is not None:
+    payload["market_end_time"] = _to_ms(safe.get("market_end_time")) or int(
+      datetime.now(timezone.utc).timestamp() * 1000
+    )
   return payload
 
 
@@ -254,20 +262,24 @@ def update_system_status(
   polymarket_ok: bool,
   db_ok: bool,
   rtds_ok: bool,
+  key: str | None = None,
 ):
-  """Update system status in Convex for dashboard display."""
+  """Update system status in Convex for dashboard display. key: '5min' | '15min' | None (default)."""
   client = _get_client()
   if not client:
     return
   try:
-    client.mutation("systemStatus:upsert", {
+    payload = {
       "engine_state": engine_state,
       "uptime_seconds": uptime_seconds,
       "scan_interval": scan_interval,
       "polymarket_ok": polymarket_ok,
       "db_ok": db_ok,
       "rtds_ok": rtds_ok,
-    })
+    }
+    if key is not None:
+      payload["key"] = key
+    client.mutation("systemStatus:upsert", payload)
   except Exception as e:
     logger.debug(f"System status update failed: {e}")
 

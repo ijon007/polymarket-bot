@@ -6,6 +6,7 @@ import {
   AccountSummary,
   ActivePositions,
   SystemStatus,
+  SystemStatusAll,
   LiveLogs,
   BotAnalytics,
   EquityChart,
@@ -22,6 +23,7 @@ import {
   usePositions,
   useStreakFromConvex,
   useSystemStatus,
+  useSystemStatusAll,
 } from "@/lib/convex/hooks";
 
 const defaultFilter: DashboardFilter = { positionSide: "all", status: "all" };
@@ -32,6 +34,7 @@ export default function Page() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const analytics = useDashboardAnalytics();
   const streakGraph = useStreakFromConvex();
+  const systemStatusEntries = useSystemStatusAll();
   const systemStatus = useSystemStatus();
   const positions = usePositions();
   const logs = useLogEntries();
@@ -89,7 +92,11 @@ export default function Page() {
             </div>
             <div className="relative shrink-0 overflow-hidden rounded border border-border/60 bg-card p-4 shadow-sm">
               <CardCorners />
-              <SystemStatus status={systemStatus} />
+              {systemStatusEntries.length > 0 ? (
+                <SystemStatusAll entries={systemStatusEntries} />
+              ) : (
+                <SystemStatus status={systemStatus} />
+              )}
             </div>
           </aside>
 

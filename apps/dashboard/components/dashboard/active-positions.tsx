@@ -10,6 +10,31 @@ import { CaretUpIcon, CaretDownIcon } from "@phosphor-icons/react";
 
 const MOBILE_BREAKPOINT = "(max-width: 1023px)";
 
+const SIGNAL_SHORT: Record<string, string> = {
+  "last second": "LS",
+  "last_second": "LS",
+  mispricing_arb: "MArb",
+  mispricing_one_sided: "MOS",
+  whale: "W",
+  imbalance: "I",
+  momentum: "Mom",
+  combined: "Comb",
+  iceberg: "Ice",
+  sweep: "Sw",
+  spoof: "Sp",
+  layering: "Lay",
+};
+
+function shortSignal(value: string): string {
+  if (!value) return value;
+  const lower = value.toLowerCase();
+  if (SIGNAL_SHORT[lower]) return SIGNAL_SHORT[lower];
+  return value
+    .split("+")
+    .map((part) => SIGNAL_SHORT[part.trim().toLowerCase()] ?? part.trim().slice(0, 2))
+    .join("+");
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -152,6 +177,7 @@ export function ActivePositions({ trades, filter }: ActivePositionsProps) {
             <tr className="border-b border-border text-left text-[0.6rem]">
               <Th label="Market" keyName="market" />
               <Th label="Side" keyName="side" />
+              <th className="pb-2 pr-3 font-medium text-muted-foreground">Signal</th>
               <Th label="Price" keyName="price" align="right" />
               <Th label="Size" keyName="size" align="right" />
               <Th label="P&L" keyName="pnl" align="right" />
@@ -162,7 +188,7 @@ export function ActivePositions({ trades, filter }: ActivePositionsProps) {
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-8 text-center text-muted-foreground">
+                <td colSpan={8} className="py-8 text-center text-muted-foreground">
                   {filtered.length === 0 && trades.length > 0 ? (
                     <>No positions match the current filters. Clear filters to see all.</>
                   ) : (
@@ -173,8 +199,18 @@ export function ActivePositions({ trades, filter }: ActivePositionsProps) {
             ) : (
               sorted.map((t) => (
                 <tr key={t.id} className="border-b border-border/40 last:border-0">
-                  <td className="max-w-[160px] truncate py-1.5 pr-3 tabular-nums" title={t.question}>
-                    {t.market}
+                  <td className="max-w-[160px] py-1.5 pr-3 tabular-nums" title={t.question}>
+                    <span className="flex items-center gap-1.5 truncate">
+                      {t.interval && (
+                        <Badge
+                          variant={t.interval === "15m" ? "default" : "secondary"}
+                          className="shrink-0 text-[0.45rem] px-1"
+                        >
+                          {t.interval}
+                        </Badge>
+                      )}
+                      <span className="truncate">{t.market}</span>
+                    </span>
                   </td>
                   <td className="py-1.5 pr-3">
                     <Badge
@@ -183,6 +219,9 @@ export function ActivePositions({ trades, filter }: ActivePositionsProps) {
                     >
                       {t.side}
                     </Badge>
+                  </td>
+                  <td className="max-w-[100px] truncate py-1.5 pr-3 text-muted-foreground" title={[t.signalType, t.strategy].filter(Boolean).join(" / ") || undefined}>
+                    {(t.signalType ?? t.strategy) ? shortSignal(t.signalType ?? t.strategy ?? "") : "—"}
                   </td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">
                     {t.price.toFixed(2)}

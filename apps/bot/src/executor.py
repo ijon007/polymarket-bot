@@ -6,74 +6,41 @@ from src.config import PAPER_MODE
 
 def execute_trade(market, signal):
   """
-  Execute trade based on signal.
-
-  Handles special cases:
-  - action='bet_both': Execute arbitrage (buy YES and NO) - paper only
-  - action='bet_yes': Buy YES
-  - action='bet_no': Buy NO
+  Execute trade based on signal. action='bet_yes' or 'bet_no' only.
   """
   if not PAPER_MODE:
     return _execute_real_trade(market, signal)
 
-  # Handle arbitrage (bet both sides) - paper only
-  if signal["action"] == "bet_both":
-    trade_data = {
-      "market_ticker": market.get("slug") or market.get("question") or "unknown",
-      "condition_id": market.get("condition_id") or "",
-      "question": market.get("question") or "",
-      "strategy": signal.get("strategy") or "",
-      "action": "ARBITRAGE",
-      "side": "ARBITRAGE",
-      "price": None,
-      "yes_price": signal.get("yes_price"),
-      "no_price": signal.get("no_price"),
-      "position_size": float(signal.get("size") or 0),
-      "size": float(signal.get("size") or 0),
-      "expected_profit": float(signal.get("expected_profit") or 0),
-      "confidence": float(signal.get("confidence") or 0),
-      "reason": signal.get("reason") or "",
-      "executed_at": datetime.now(timezone.utc).replace(tzinfo=None),
-      "status": "paper",
-    }
+  side = "YES" if signal["action"] == "bet_yes" else "NO"
+  trade_data = {
+    "market_ticker": market.get("slug") or market.get("question") or "unknown",
+    "condition_id": market.get("condition_id") or "",
+    "question": market.get("question") or "",
+    "strategy": signal.get("strategy") or "",
+    "action": side,
+    "side": side,
+    "price": signal.get("price"),
+    "yes_price": market.get("yes_price"),
+    "no_price": market.get("no_price"),
+    "position_size": float(signal.get("size") or 0),
+    "size": float(signal.get("size") or 0),
+    "expected_profit": float(signal.get("expected_profit") or 0),
+    "confidence": float(signal.get("confidence") or 0),
+    "reason": signal.get("reason") or "",
+    "executed_at": datetime.now(timezone.utc).replace(tzinfo=None),
+    "status": "paper",
+  }
+  for k in ("signal_type", "confidence_layers", "market_end_time"):
+    if signal.get(k) is not None:
+      trade_data[k] = signal[k]
 
-    logger.info(
-      f"PAPER TRADE [ARBITRAGE]: "
-      f"Buy YES @ {signal['yes_price']:.4f} + NO @ {signal['no_price']:.4f} | "
-      f"Size: ${signal['size']:.2f} | "
-      f"Expected: ${signal['expected_profit']:.2f}"
-    )
-
-  # Handle directional bets
-  else:
-    side = "YES" if signal["action"] == "bet_yes" else "NO"
-
-    trade_data = {
-      "market_ticker": market.get("slug") or market.get("question") or "unknown",
-      "condition_id": market.get("condition_id") or "",
-      "question": market.get("question") or "",
-      "strategy": signal.get("strategy") or "",
-      "action": side,
-      "side": side,
-      "price": signal.get("price"),
-      "yes_price": market.get("yes_price"),
-      "no_price": market.get("no_price"),
-      "position_size": float(signal.get("size") or 0),
-      "size": float(signal.get("size") or 0),
-      "expected_profit": float(signal.get("expected_profit") or 0),
-      "confidence": float(signal.get("confidence") or 0),
-      "reason": signal.get("reason") or "",
-      "executed_at": datetime.now(timezone.utc).replace(tzinfo=None),
-      "status": "paper",
-    }
-
-    logger.info(
-      f"PAPER TRADE [{signal['strategy'].upper()}]: "
-      f"Buy {side} @ {signal['price']:.4f} | "
-      f"Size: ${signal['size']:.2f} | "
-      f"Confidence: {signal['confidence']*100:.0f}% | "
-      f"Reason: {signal['reason']}"
-    )
+  logger.info(
+    f"PAPER TRADE [{signal['strategy'].upper()}]: "
+    f"Buy {side} @ {signal['price']:.4f} | "
+    f"Size: ${signal['size']:.2f} | "
+    f"Confidence: {signal['confidence']*100:.0f}% | "
+    f"Reason: {signal['reason']}"
+  )
 
   saved = log_trade(trade_data)
   if not saved:
@@ -82,14 +49,7 @@ def execute_trade(market, signal):
 
 
 def _execute_real_trade(market, signal):
-  """
-  Real trade via CLOB market order. Only directional bets (bet_yes/bet_no).
-  Arbitrage not supported in real mode.
-  """
-  if signal["action"] == "bet_both":
-    logger.warning("Arbitrage (bet_both) not supported in real mode - skipping")
-    return False
-
+  """Real trade via CLOB market order. bet_yes / bet_no only."""
   tokens = market.get("tokens") or {}
   side = "YES" if signal["action"] == "bet_yes" else "NO"
   token_id = tokens.get("yes") if side == "YES" else tokens.get("no")
