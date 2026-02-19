@@ -28,14 +28,27 @@ _RTDS_SETTLE_BUFFER_SEC = 2  # seconds after window end before we resolve via RT
 
 _WINDOW_5M_SEC = 300
 _WINDOW_15M_SEC = 900
+_5M_ASSETS = ("btc", "eth", "sol", "xrp")
+
+
+def _parse_5m_slug(slug: str) -> Tuple[Optional[str], Optional[int], Optional[int]]:
+  """Parse {asset}-updown-5m-{window_start_ts}. Returns (asset, window_start_ts, window_end_ts) or (None, None, None)."""
+  m = re.match(r"([a-z]+)-updown-5m-(\d+)$", (slug or "").strip().lower())
+  if not m:
+    return None, None, None
+  asset = m.group(1)
+  if asset not in _5M_ASSETS:
+    return None, None, None
+  start_ts = int(m.group(2))
+  return asset, start_ts, start_ts + _WINDOW_5M_SEC
+
 
 def _parse_btc_5m_slug(slug: str) -> Tuple[Optional[int], Optional[int]]:
-  """Parse btc-updown-5m-{window_start_ts}. Returns (window_start_ts, window_end_ts) or (None, None)."""
-  m = re.match(r"btc-updown-5m-(\d+)$", slug or "")
-  if not m:
+  """Backward compat: parse btc-updown-5m-{window_start_ts}. Returns (window_start_ts, window_end_ts) or (None, None)."""
+  asset, start_ts, end_ts = _parse_5m_slug(slug)
+  if asset != "btc" or start_ts is None or end_ts is None:
     return None, None
-  start_ts = int(m.group(1))
-  return start_ts, start_ts + _WINDOW_5M_SEC
+  return start_ts, end_ts
 
 
 def _parse_15m_slug(slug: str) -> Tuple[Optional[str], Optional[int], Optional[int]]:
@@ -48,10 +61,26 @@ def _parse_15m_slug(slug: str) -> Tuple[Optional[str], Optional[int], Optional[i
   return asset, start_ts, start_ts + _WINDOW_15M_SEC
 
 
+def _get_rtds_price_fns():
+  """Asset -> get_*_at_timestamp for 5m and 15m resolution."""
+  from src.utils.rtds_client import (
+    get_btc_at_timestamp,
+    get_eth_at_timestamp,
+    get_sol_at_timestamp,
+    get_xrp_at_timestamp,
+  )
+  return {
+    "btc": get_btc_at_timestamp,
+    "eth": get_eth_at_timestamp,
+    "sol": get_sol_at_timestamp,
+    "xrp": get_xrp_at_timestamp,
+  }
+
+
 def resolve_outcome_via_rtds(slug: str) -> dict:
   """
   Resolve market outcome using RTDS (Chainlink) as soon as window end has passed.
-  Supports 5m BTC (btc-updown-5m-{ts}) and 15m BTC/ETH/SOL/XRP ({asset}-updown-15m-{ts}).
+  Supports 5m (btc/eth/sol/xrp)-updown-5m-{ts} and 15m {asset}-updown-15m-{ts}.
   Returns dict with resolved: bool, outcome: "YES"|"NO" (if resolved).
   """
   now = time.time()
@@ -59,12 +88,12 @@ def resolve_outcome_via_rtds(slug: str) -> dict:
   window_end_ts = None
   get_price_fn = None
 
-  start_ts_5m, end_ts_5m = _parse_btc_5m_slug(slug)
-  if start_ts_5m is not None and end_ts_5m is not None:
-    window_start_ts, window_end_ts = start_ts_5m, end_ts_5m
+  asset_5m, start_5m, end_5m = _parse_5m_slug(slug)
+  if asset_5m is not None and start_5m is not None and end_5m is not None:
+    window_start_ts, window_end_ts = start_5m, end_5m
     try:
-      from src.utils.rtds_client import get_btc_at_timestamp
-      get_price_fn = get_btc_at_timestamp
+      fns = _get_rtds_price_fns()
+      get_price_fn = fns.get(asset_5m)
     except Exception:
       pass
   else:
@@ -72,13 +101,7 @@ def resolve_outcome_via_rtds(slug: str) -> dict:
     if asset is not None and start_ts_15 is not None and end_ts_15 is not None:
       window_start_ts, window_end_ts = start_ts_15, end_ts_15
       try:
-        from src.utils.rtds_client import (
-          get_btc_at_timestamp,
-          get_eth_at_timestamp,
-          get_sol_at_timestamp,
-          get_xrp_at_timestamp,
-        )
-        fns = {"btc": get_btc_at_timestamp, "eth": get_eth_at_timestamp, "sol": get_sol_at_timestamp, "xrp": get_xrp_at_timestamp}
+        fns = _get_rtds_price_fns()
         get_price_fn = fns.get(asset)
       except Exception:
         pass
@@ -368,12 +391,7 @@ def settle_trades():
       )
 
       logger.info(
-        f"Settled trade #{trade['_id']} | "
-        f"Strategy: {trade.get('strategy')} | "
-        f"Action: {trade.get('side')} | "
-        f"Outcome: {outcome} | "
-        f"P&L: ${actual_pnl:.2f} | "
-        f"Status: {status.upper()}"
+        f"Settled #{trade['_id']} | {trade.get('strategy')} {trade.get('side')} | Outcome: {outcome} | P&L: ${actual_pnl:.2f} | {status.upper()}"
       )
 
   if settled_any and notif_ids_to_drop:

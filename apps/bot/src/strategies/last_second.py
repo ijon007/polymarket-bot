@@ -1,12 +1,23 @@
+import re
 from src.strategies.base import BaseStrategy
-from src.utils.price_feed import get_btc_price, get_btc_price_at_timestamp, get_btc_price_source
+from src.utils.price_feed import get_price, get_price_at_timestamp, get_price_source
 from typing import Optional, Dict
 from loguru import logger
 
 
+def _asset_from_market(market: Dict) -> Optional[str]:
+  """Derive asset from market (e.g. btc, eth) for 5m slugs."""
+  a = market.get("asset")
+  if a:
+    return (a or "").strip().lower()
+  slug = (market.get("slug") or "").strip().lower()
+  m = re.match(r"([a-z]+)-updown-5m-\d+$", slug)
+  return m.group(1) if m else None
+
+
 class LastSecondStrategy(BaseStrategy):
   """
-  Wait until final seconds, check if BTC is up/down vs start, bet on winner.
+  Wait until final seconds, check if asset is up/down vs start, bet on winner.
 
   Only trades in last trigger_seconds when outcome is nearly certain.
   """
@@ -30,10 +41,15 @@ class LastSecondStrategy(BaseStrategy):
       return None
 
     slug = market["slug"]
+    asset = _asset_from_market(market)
+    if not asset:
+      logger.debug(f"Cannot derive asset for {slug}")
+      return None
+    asset_upper = asset.upper()
 
     # Resolution source: log when Polymarket uses Chainlink (we use RTDS Chainlink)
     resolution_source = (market.get("resolution_source") or "").strip()
-    price_source = get_btc_price_source()
+    price_source = get_price_source(asset)
     if resolution_source and "chain.link" in resolution_source.lower():
       if price_source == "rtds":
         logger.info(f"Resolution source: Chainlink (we use RTDS Chainlink) | {slug}")
@@ -50,7 +66,7 @@ class LastSecondStrategy(BaseStrategy):
     start_source = None
     window_start_ts = market.get("window_start_ts")
     if window_start_ts is not None:
-      start_price = get_btc_price_at_timestamp(window_start_ts)
+      start_price = get_price_at_timestamp(window_start_ts, asset)
       if start_price is not None:
         start_source = "timestamp"
     if start_price is None:
@@ -61,10 +77,9 @@ class LastSecondStrategy(BaseStrategy):
       return None
     logger.info(f"Start price ({start_source}): ${start_price:,.2f} | {slug}")
 
-    # Get current BTC price
-    current_price = get_btc_price()
+    current_price = get_price(asset)
     if current_price is None:
-      logger.debug("Failed to fetch current BTC price")
+      logger.debug(f"Failed to fetch current {asset_upper} price")
       return None
 
     # Calculate change
@@ -83,27 +98,21 @@ class LastSecondStrategy(BaseStrategy):
 
     # Determine winner
     if current_price >= start_price:
-      # BTC is up → YES will win
       action = "bet_yes"
       price = market["yes_price"]
       outcome = "UP"
     else:
-      # BTC is down → NO will win
       action = "bet_no"
       price = market["no_price"]
       outcome = "DOWN"
 
     seconds_left = market["seconds_left"]
     reason = (
-      f"BTC {outcome} ${abs(price_change):,.2f} ({price_change_pct:+.2f}%) | "
+      f"{asset_upper} {outcome} ${abs(price_change):,.2f} ({price_change_pct:+.2f}%) | "
       f"{seconds_left}s left → outcome certain"
     )
 
-    logger.info(
-      f"[LAST SECOND] {slug} | "
-      f"Start: ${start_price:,.2f} → Now: ${current_price:,.2f} | "
-      f"{reason}"
-    )
+    logger.info(f"[LAST SECOND] {slug} | Start: ${start_price:,.2f} → Now: ${current_price:,.2f} | {reason}")
 
     # Very high confidence (outcome is known)
     confidence = 0.99

@@ -5,7 +5,6 @@ load_dotenv(".env.local")
 
 # Database (Convex replaces Neon)
 CONVEX_URL = os.getenv("CONVEX_URL")
-DATABASE_URL = os.getenv("DATABASE_URL")  # legacy, unused when CONVEX_URL set
 
 # Trading
 PAPER_MODE = True
@@ -39,6 +38,15 @@ STRATEGIES = {
 }
 
 STRATEGY_PRIORITY = ["last_second"]
+
+# --- 5-min bot: assets to scan/trade (BTC, ETH, SOL, XRP) ---
+FIVE_MIN_ASSETS = [
+  a.strip().lower()
+  for a in (os.getenv("FIVE_MIN_ASSETS") or "btc,eth,sol,xrp").split(",")
+  if a.strip()
+]
+if not FIVE_MIN_ASSETS:
+  FIVE_MIN_ASSETS = ["btc", "eth", "sol", "xrp"]
 
 # --- 15-min signal engine (separate process, main_15min.py) ---
 MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "10.0"))

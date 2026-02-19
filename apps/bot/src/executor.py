@@ -35,11 +35,7 @@ def execute_trade(market, signal):
       trade_data[k] = signal[k]
 
   logger.info(
-    f"PAPER TRADE [{signal['strategy'].upper()}]: "
-    f"Buy {side} @ {signal['price']:.4f} | "
-    f"Size: ${signal['size']:.2f} | "
-    f"Confidence: {signal['confidence']*100:.0f}% | "
-    f"Reason: {signal['reason']}"
+    f"PAPER TRADE [{signal['strategy'].upper()}]: Buy {side} @ {signal['price']:.4f} | ${signal['size']:.2f} | {signal['confidence']*100:.0f}% | {signal['reason']}"
   )
 
   saved = log_trade(trade_data)
@@ -105,10 +101,7 @@ def _execute_real_trade(market, signal):
     "transaction_hashes": tx_hashes,
   }
 
-  logger.info(
-    f"REAL TRADE [{signal['strategy'].upper()}]: "
-    f"Buy {side} | Size: ${position_size:.2f} | OrderID: {order_id}"
-  )
+  logger.info(f"REAL TRADE [{signal['strategy'].upper()}]: Buy {side} | ${position_size:.2f} | OrderID: {order_id}")
 
   saved = log_trade(trade_data)
   if not saved:

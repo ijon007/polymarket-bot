@@ -2,8 +2,8 @@ import sys
 import signal
 import time
 from loguru import logger
-from src.config import SCAN_INTERVAL, STRATEGIES, STRATEGY_PRIORITY
-from src.scanner import fetch_btc_5min_market
+from src.config import SCAN_INTERVAL, STRATEGIES, STRATEGY_PRIORITY, FIVE_MIN_ASSETS
+from src.scanner import fetch_5min_markets
 from src.executor import execute_trade
 from src.database import (
   init_db,
@@ -23,7 +23,7 @@ logger.level("BALANCE", no=22, color="<cyan>")
 
 def main():
   logger.info("=" * 60)
-  logger.info("BTC 5-Minute Multi-Strategy Bot")
+  logger.info("5-Minute Multi-Strategy Bot (BTC, ETH, SOL, XRP)")
   logger.info("=" * 60)
 
   init_db()
@@ -46,13 +46,31 @@ def main():
   if STRATEGIES["last_second"]["enabled"]:
     strategy_instances["last_second"] = LastSecondStrategy(STRATEGIES["last_second"])
 
-  enabled_count = len(strategy_instances)
-  logger.info(f"Enabled strategies: {enabled_count}")
-  for name in strategy_instances:
-    logger.info(f"  ✓ {name}")
+  logger.info(f"Strategies: {','.join(strategy_instances) or 'none'}")
   logger.info("=" * 60)
 
-  from src.utils.rtds_client import start as rtds_start, get_latest_btc_usd, stop as rtds_stop
+  from src.utils.rtds_client import (
+    start as rtds_start,
+    stop as rtds_stop,
+    get_latest_btc_usd,
+    get_latest_eth_usd,
+    get_latest_sol_usd,
+    get_latest_xrp_usd,
+  )
+  _RTDS_GETTERS = {
+    "btc": get_latest_btc_usd,
+    "eth": get_latest_eth_usd,
+    "sol": get_latest_sol_usd,
+    "xrp": get_latest_xrp_usd,
+  }
+
+  def _rtds_ok_5min():
+    return all(_RTDS_GETTERS.get(a)() is not None for a in FIVE_MIN_ASSETS)
+
+  def _rtds_status_line():
+    parts = [f"{a}=ok" if _RTDS_GETTERS.get(a)() is not None else f"{a}=n/a" for a in FIVE_MIN_ASSETS]
+    return "RTDS: " + " ".join(parts)
+
   rtds_start()
 
   shutdown_requested = False
@@ -93,72 +111,65 @@ def main():
     if shutdown_requested:
       break
     try:
-      # Fetch current BTC 5min market
-      market = fetch_btc_5min_market()
-      polymarket_ok = True  # fetch completed (success or no market)
+      markets = fetch_5min_markets()
+      polymarket_ok = True
 
-      if not market:
-        logger.info("No active market (between rounds)")
+      if not markets:
+        logger.info(f"No active market (between rounds) | {_rtds_status_line()}")
         update_system_status(
           engine_state="IDLE",
           uptime_seconds=int(time.time() - bot_start_time),
           scan_interval=SCAN_INTERVAL,
           polymarket_ok=polymarket_ok,
           db_ok=is_db_configured(),
-          rtds_ok=get_latest_btc_usd() is not None,
+          rtds_ok=_rtds_ok_5min(),
           key="5min",
         )
         time.sleep(30)
         continue
 
-      # Force skip if this window started before we started (we don't have true start price)
-      window_start_ts = market.get("window_start_ts")
-      if window_start_ts is not None and window_start_ts < bot_start_time:
-        logger.warning(
-          f"SKIP: window started before bot (start_ts={window_start_ts:.0f} < bot_start={bot_start_time:.0f}). "
-          "Waiting for next 5m window."
-        )
-        settle_trades()
-        update_system_status(
-          engine_state="IDLE",
-          uptime_seconds=int(time.time() - bot_start_time),
-          scan_interval=SCAN_INTERVAL,
-          polymarket_ok=polymarket_ok,
-          db_ok=is_db_configured(),
-          rtds_ok=get_latest_btc_usd() is not None,
-          key="5min",
-        )
-        time.sleep(SCAN_INTERVAL)
-        continue
+      active_assets = [m.get("asset", "") for m in markets if m.get("asset")]
+      status_line = f"Markets: {','.join(active_assets) or '?'} | {_rtds_status_line()}"
+      logger.info(status_line)
 
-      # Try each strategy in priority order
-      trade_signal = None
-      for strategy_name in STRATEGY_PRIORITY:
-        if strategy_name not in strategy_instances:
+      skipped = [
+        m.get("asset", m.get("slug", "?"))
+        for m in markets
+        if m.get("window_start_ts") is not None and m.get("window_start_ts") < bot_start_time
+      ]
+      if skipped:
+        logger.warning(f"SKIP: {','.join(skipped)} started before bot")
+
+      no_opp_parts = []
+      for market in markets:
+        window_start_ts = market.get("window_start_ts")
+        if window_start_ts is not None and window_start_ts < bot_start_time:
           continue
 
-        strategy = strategy_instances[strategy_name]
-        trade_signal = strategy.analyze(market)
+        trade_signal = None
+        for strategy_name in STRATEGY_PRIORITY:
+          if strategy_name not in strategy_instances:
+            continue
+          strategy = strategy_instances[strategy_name]
+          trade_signal = strategy.analyze(market)
+          if trade_signal:
+            logger.info(f"Strategy '{strategy_name}' triggered!")
+            break
 
         if trade_signal:
-          logger.info(f"Strategy '{strategy_name}' triggered!")
-          break
-
-      # Execute if signal found (only one trade per market)
-      if trade_signal:
-        slug = market.get("slug") or market.get("question") or ""
-        if has_open_trade_for_market(slug):
-          logger.debug(f"Skip trade: already have open position on {slug}")
+          slug = market.get("slug") or market.get("question") or ""
+          if has_open_trade_for_market(slug):
+            logger.debug(f"Skip trade: already have open position on {slug}")
+          else:
+            opportunities_found += 1
+            success = execute_trade(market, trade_signal)
+            if success:
+              logger.success(f"Trade executed! Total opportunities: {opportunities_found}")
         else:
-          opportunities_found += 1
-          success = execute_trade(market, trade_signal)
-          if success:
-            logger.success(f"Trade executed! Total opportunities: {opportunities_found}")
-      else:
-        logger.debug(
-          f"No opportunities: {market['slug']} | "
-          f"YES: {market['yes_price']:.3f}, NO: {market['no_price']:.3f}"
-        )
+          a = market.get("asset", "")
+          no_opp_parts.append(f"{a} {market.get('yes_price', 0):.2f}/{market.get('no_price', 0):.2f}")
+      if no_opp_parts:
+        logger.debug("No opportunities: " + " | ".join(no_opp_parts))
 
       settle_trades()
 
@@ -168,7 +179,7 @@ def main():
         scan_interval=SCAN_INTERVAL,
         polymarket_ok=polymarket_ok,
         db_ok=is_db_configured(),
-        rtds_ok=get_latest_btc_usd() is not None,
+        rtds_ok=_rtds_ok_5min(),
         key="5min",
       )
 
@@ -176,13 +187,14 @@ def main():
 
     except Exception as e:
       logger.error(f"Error in main loop: {e}")
+      logger.info(_rtds_status_line())
       update_system_status(
         engine_state="ERROR",
         uptime_seconds=int(time.time() - bot_start_time),
         scan_interval=SCAN_INTERVAL,
         polymarket_ok=False,
         db_ok=is_db_configured(),
-        rtds_ok=get_latest_btc_usd() is not None,
+        rtds_ok=_rtds_ok_5min(),
         key="5min",
       )
       time.sleep(30)

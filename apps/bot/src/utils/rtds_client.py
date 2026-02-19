@@ -16,7 +16,6 @@ except ImportError:
   websocket = None
 
 _WS_URL = "wss://ws-live-data.polymarket.com"
-_PING_INTERVAL = 5  # docs: "Send PING messages every 5 seconds to maintain the connection"
 _PING_TIMEOUT = 3
 _RECONNECT_DELAY = 5
 _MAX_RECONNECT_DELAY = 60
@@ -99,10 +98,7 @@ def _on_error(_, error: Exception) -> None:
     _last_was_504 = True
     logger.warning("RTDS WebSocket 504 Gateway Timeout — will back off before reconnect")
   elif "getaddrinfo failed" in err_str or "11001" in err_str or "name or service not known" in err_str:
-    logger.warning(
-      f"RTDS WebSocket DNS/network error: cannot resolve {_WS_URL} — "
-      "check internet, DNS, VPN/firewall, or try another network"
-    )
+    logger.warning(f"RTDS WebSocket DNS error: cannot resolve {_WS_URL} — check internet/DNS/VPN")
   else:
     logger.warning(f"RTDS WebSocket error: {error}")
 
@@ -141,7 +137,7 @@ def _run_loop() -> None:
         on_close=_on_close,
         on_open=_on_open,
       )
-      _ws.run_forever(ping_interval=_PING_INTERVAL, ping_timeout=_PING_TIMEOUT)
+      _ws.run_forever(ping_timeout=_PING_TIMEOUT)
     except Exception as e:
       logger.warning(f"RTDS connection failed: {e}")
     if _stop.is_set():
