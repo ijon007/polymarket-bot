@@ -12,6 +12,7 @@ import type {
   SystemStatusEntry,
   TradeRow,
 } from "@/types/dashboard";
+import { useDataMode } from "@/lib/data-mode-context";
 import { mockAccount } from "@/lib/mock/account";
 import { mockAnalytics } from "@/lib/mock/analytics";
 import { mockStreakGraph } from "@/lib/mock/streak";
@@ -53,7 +54,8 @@ function computeStreak(history: StreakTradeEntry[]): { currentStreak: number; st
 }
 
 export function useDashboardAnalytics(): BotAnalytics {
-  const data = useQuery(api.trades.dashboardAnalytics, {});
+  const { dataMode } = useDataMode();
+  const data = useQuery(api.trades.dashboardAnalytics, { dataMode });
   if (data === undefined) return mockAnalytics;
   return {
     totalTrades: data.totalTrades,
@@ -66,9 +68,10 @@ export function useDashboardAnalytics(): BotAnalytics {
 }
 
 export function useDashboardAccount(initialBalance?: number): AccountSummary {
+  const { dataMode } = useDataMode();
   const balance = initialBalance ?? INITIAL_BALANCE;
-  const analytics = useQuery(api.trades.dashboardAnalytics, {});
-  const todayPnl = useQuery(api.trades.dashboardTodayPnl, {});
+  const analytics = useQuery(api.trades.dashboardAnalytics, { dataMode });
+  const todayPnl = useQuery(api.trades.dashboardTodayPnl, { dataMode });
   if (analytics === undefined || todayPnl === undefined) return mockAccount;
   const { totalPnl, wonCount, lostCount } = analytics;
   const settledCount = wonCount + lostCount;
@@ -86,7 +89,8 @@ export function useDashboardAccount(initialBalance?: number): AccountSummary {
 }
 
 export function useStreakFromConvex(): StreakGraph {
-  const settled = useQuery(api.trades.dashboardSettledForStreak, { limit: 40 });
+  const { dataMode } = useDataMode();
+  const settled = useQuery(api.trades.dashboardSettledForStreak, { limit: 40, dataMode });
   if (settled === undefined) return mockStreakGraph;
   const history: StreakTradeEntry[] = [...settled]
     .reverse()
@@ -108,7 +112,8 @@ function formatUptime(seconds: number): string {
 }
 
 export function usePositions(): TradeRow[] {
-  const data = useQuery(api.trades.listForDashboard, {});
+  const { dataMode } = useDataMode();
+  const data = useQuery(api.trades.listForDashboard, { dataMode });
   if (data === undefined) return [];
   return data.map((t) => {
     const market = t.market_ticker ?? "";

@@ -73,9 +73,12 @@ export const listUnsettled = query({
   },
 });
 
+const dataModeArg = v.optional(v.union(v.literal("paper"), v.literal("live")));
+
 export const listSettled = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { dataMode: dataModeArg },
+  handler: async (ctx, args) => {
+    if (args.dataMode === "live") return [];
     const won = await ctx.db
       .query("trades")
       .withIndex("by_status", (q) => q.eq("status", "won"))
@@ -110,8 +113,55 @@ export const settledPnLSum = query({
 });
 
 export const dashboardAnalytics = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { dataMode: dataModeArg },
+  handler: async (ctx, args) => {
+    const mode = args.dataMode;
+    if (mode === "live") {
+      const paper = await ctx.db
+        .query("trades")
+        .withIndex("by_status", (q) => q.eq("status", "paper"))
+        .collect();
+      return {
+        totalTrades: paper.length,
+        settled: 0,
+        pending: paper.length,
+        totalPnl: 0,
+        bestTrade: 0,
+        worstTrade: 0,
+        wonCount: 0,
+        lostCount: 0,
+      };
+    }
+    if (mode === "paper") {
+      const won = await ctx.db
+        .query("trades")
+        .withIndex("by_status", (q) => q.eq("status", "won"))
+        .collect();
+      const lost = await ctx.db
+        .query("trades")
+        .withIndex("by_status", (q) => q.eq("status", "lost"))
+        .collect();
+      const settled = [...won, ...lost];
+      let totalPnl = 0;
+      let bestTrade = 0;
+      let worstTrade = 0;
+      for (const t of settled) {
+        const p = t.actual_profit ?? 0;
+        totalPnl += p;
+        if (p > bestTrade) bestTrade = p;
+        if (p < worstTrade) worstTrade = p;
+      }
+      return {
+        totalTrades: settled.length,
+        settled: settled.length,
+        pending: 0,
+        totalPnl,
+        bestTrade,
+        worstTrade,
+        wonCount: won.length,
+        lostCount: lost.length,
+      };
+    }
     const [paper, won, lost] = await Promise.all([
       ctx.db.query("trades").withIndex("by_status", (q) => q.eq("status", "paper")).collect(),
       ctx.db.query("trades").withIndex("by_status", (q) => q.eq("status", "won")).collect(),
@@ -141,8 +191,9 @@ export const dashboardAnalytics = query({
 });
 
 export const dashboardSettledForStreak = query({
-  args: { limit: v.optional(v.number()) },
+  args: { limit: v.optional(v.number()), dataMode: dataModeArg },
   handler: async (ctx, args) => {
+    if (args.dataMode === "live") return [];
     const limit = args.limit ?? 40;
     const won = await ctx.db
       .query("trades")
@@ -159,8 +210,30 @@ export const dashboardSettledForStreak = query({
 });
 
 export const listForDashboard = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { dataMode: dataModeArg },
+  handler: async (ctx, args) => {
+    const mode = args.dataMode;
+    if (mode === "live") {
+      const paper = await ctx.db
+        .query("trades")
+        .withIndex("by_status", (q) => q.eq("status", "paper"))
+        .collect();
+      paper.sort((a, b) => (b.executed_at ?? 0) - (a.executed_at ?? 0));
+      return paper;
+    }
+    if (mode === "paper") {
+      const won = await ctx.db
+        .query("trades")
+        .withIndex("by_status", (q) => q.eq("status", "won"))
+        .collect();
+      const lost = await ctx.db
+        .query("trades")
+        .withIndex("by_status", (q) => q.eq("status", "lost"))
+        .collect();
+      const all = [...won, ...lost];
+      all.sort((a, b) => (b.executed_at ?? 0) - (a.executed_at ?? 0));
+      return all;
+    }
     const [paper, won, lost] = await Promise.all([
       ctx.db.query("trades").withIndex("by_status", (q) => q.eq("status", "paper")).collect(),
       ctx.db.query("trades").withIndex("by_status", (q) => q.eq("status", "won")).collect(),
@@ -179,8 +252,9 @@ function settledAtSec(ts: number | undefined): number {
 }
 
 export const dashboardTodayPnl = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { dataMode: dataModeArg },
+  handler: async (ctx, args) => {
+    if (args.dataMode === "live") return 0;
     const nowSec = Date.now() / 1000;
     const dayStartSec = Math.floor(nowSec / 86400) * 86400;
     const won = await ctx.db

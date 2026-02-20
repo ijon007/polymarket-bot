@@ -8,6 +8,7 @@ import {
   type WinRateHeatmapData,
   type HeatmapCell,
 } from "@/lib/mock/charts";
+import { useDataMode } from "@/lib/data-mode-context";
 import { CardCorners } from "./card-corners";
 import { cn } from "@/lib/utils";
 
@@ -65,7 +66,8 @@ type Metric = "winRate" | "pnl";
 const TOOLTIP_OFFSET = 12;
 
 export function WinRateHeatmap() {
-  const settled = useQuery(api.trades.listSettled, {});
+  const { dataMode } = useDataMode();
+  const settled = useQuery(api.trades.listSettled, { dataMode });
   const trades = useMemo(() => {
     if (settled === undefined) return [];
     return settled.map((t) => ({

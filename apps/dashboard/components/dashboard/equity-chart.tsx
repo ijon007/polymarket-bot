@@ -9,6 +9,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { CardCorners } from "./card-corners";
+import { useDataMode } from "@/lib/data-mode-context";
 import type { BalancePoint, ChartTimeRange } from "@/lib/mock/charts";
 import { fmtTimeHHMM } from "@/lib/mock/charts";
 import { cn } from "@/lib/utils";
@@ -129,11 +130,12 @@ function EquityTooltipContent({
 }
 
 export function EquityChart() {
+  const { dataMode } = useDataMode();
   const [timeRange, setTimeRange] = useState<ChartTimeRange>("1H");
   const gradientId = useId().replace(/:/g, "");
 
-  const settled = useQuery(api.trades.listSettled, {});
-  const analytics = useQuery(api.trades.dashboardAnalytics, {});
+  const settled = useQuery(api.trades.listSettled, { dataMode });
+  const analytics = useQuery(api.trades.dashboardAnalytics, { dataMode });
   const currentEquity = INITIAL_BALANCE + (analytics?.totalPnl ?? 0);
 
   const balanceData = useMemo(() => {
