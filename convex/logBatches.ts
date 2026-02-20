@@ -1,13 +1,15 @@
 import { internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+const LOG_RETENTION_MS = 10 * 60 * 1000; // 10 min
+
 export const deleteOldLogBatches = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    const cutoff = Date.now() - LOG_RETENTION_MS;
     const old = await ctx.db
       .query("log_batches")
-      .withIndex("by_createdAt", (q) => q.lt("createdAt", oneHourAgo))
+      .withIndex("by_createdAt", (q) => q.lt("createdAt", cutoff))
       .collect();
     for (const doc of old) {
       await ctx.db.delete(doc._id);
@@ -39,10 +41,10 @@ export const insertBatch = mutation({
 export const listRecent = query({
   args: {},
   handler: async (ctx) => {
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    const cutoff = Date.now() - LOG_RETENTION_MS;
     return await ctx.db
       .query("log_batches")
-      .withIndex("by_createdAt", (q) => q.gte("createdAt", oneHourAgo))
+      .withIndex("by_createdAt", (q) => q.gte("createdAt", cutoff))
       .order("asc")
       .collect();
   },

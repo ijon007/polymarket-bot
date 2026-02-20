@@ -17,7 +17,7 @@ function fmtDateWithTime(d: Date) {
   return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${fmtTimeHHMM(d)}`;
 }
 
-const INITIAL_BALANCE = 1000;
+const INITIAL_BALANCE = 10;
 
 function addDays(d: Date, n: number) {
   const out = new Date(d);

@@ -1,4 +1,4 @@
-"""Log buffer for dashboard: captures loguru output, flushes to Convex every 20s (up to 100 lines per batch)."""
+"""Log buffer for dashboard: captures loguru output, flushes to Convex every 1 min (up to 100 lines per batch)."""
 import threading
 import time
 from datetime import datetime, timezone
@@ -10,7 +10,7 @@ from src.database import _get_client
 _BUFFER: list[dict] = []
 _BUFFER_LOCK = threading.Lock()
 _MAX_BUFFER = 500
-_FLUSH_INTERVAL = 20
+_FLUSH_INTERVAL = 60  # rate limit: save to DB at most once per minute
 _flush_thread: threading.Thread | None = None
 _flush_stop = threading.Event()
 
@@ -70,7 +70,7 @@ def _flush() -> None:
 
 
 def _flush_loop() -> None:
-  """Background thread: flush every 20 seconds."""
+  """Background thread: flush every 1 minute (rate limit to reduce DB bandwidth)."""
   while not _flush_stop.wait(_FLUSH_INTERVAL):
     _flush()
 

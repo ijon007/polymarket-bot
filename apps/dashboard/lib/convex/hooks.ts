@@ -17,7 +17,7 @@ import { mockAnalytics } from "@/lib/mock/analytics";
 import { mockStreakGraph } from "@/lib/mock/streak";
 import { mockSystemStatus } from "@/lib/mock/system";
 
-const INITIAL_BALANCE = 1000;
+const INITIAL_BALANCE = 10;
 
 function mapSide(side: string): "UP" | "DOWN" {
   if (side === "YES") return "UP";
