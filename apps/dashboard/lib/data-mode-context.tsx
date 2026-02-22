@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -32,7 +33,10 @@ type DataModeContextValue = {
 const DataModeContext = createContext<DataModeContextValue | null>(null);
 
 export function DataModeProvider({ children }: { children: ReactNode }) {
-  const [dataMode, setDataModeState] = useState<DataMode>(readStored);
+  const [dataMode, setDataModeState] = useState<DataMode>("live");
+  useEffect(() => {
+    setDataModeState(readStored());
+  }, []);
   const setDataMode = useCallback((mode: DataMode) => {
     setDataModeState(mode);
     try {

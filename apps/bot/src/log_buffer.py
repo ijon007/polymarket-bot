@@ -54,19 +54,10 @@ def _sink(message) -> None:
 
 
 def _flush() -> None:
-  """Take up to 100 entries from buffer and send to Convex."""
-  client = _get_client()
-  if not client:
-    return
+  """Drain buffer only. Log batches to Convex disabled to save bandwidth (free tier)."""
   with _BUFFER_LOCK:
-    batch = _BUFFER[:100]
     del _BUFFER[:100]
-  if not batch:
-    return
-  try:
-    client.mutation("logBatches:insertBatch", {"entries": batch})
-  except Exception as e:
-    logger.debug(f"Log batch flush failed: {e}")
+  # Do not send to Convex: client.mutation("logBatches:insertBatch", ...)
 
 
 def _flush_loop() -> None:

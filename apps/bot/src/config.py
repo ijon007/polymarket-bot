@@ -9,7 +9,7 @@ CONVEX_URL = os.getenv("CONVEX_URL")
 # Trading
 PAPER_MODE = True
 BANKROLL = 10.0
-DEFAULT_POSITION_SIZE = 0.1  # $0.1 per trade (simulate real-money scale)
+DEFAULT_POSITION_SIZE = 10.0  # $10 per trade (simulate real-money scale)
 
 # CLOB (Polymarket) - required when PAPER_MODE=False
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")  # EOA private key (hex, with or without 0x)
@@ -30,7 +30,7 @@ STRATEGIES = {
   "last_second": {
     "enabled": True,
     "trigger_seconds": 30,
-    "position_size": DEFAULT_POSITION_SIZE,  # $0.1 per trade
+    "position_size": DEFAULT_POSITION_SIZE,  # $10 per trade
     "min_move_pct": 0.05,  # Minimum move % before betting (0 = disabled)
     "min_move_dollars": 0,  # Minimum move $ before betting (0 = disabled)
     "require_resolution_source_match": False,  # If True, skip when Polymarket uses different feed (e.g. Chainlink)
