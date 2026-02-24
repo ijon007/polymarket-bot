@@ -10,6 +10,7 @@ from src.config import (
     POLYMARKET_API_KEY,
     POLYMARKET_API_SECRET,
     POLYMARKET_API_PASSPHRASE,
+    POLYMARKET_MIN_ORDER_SIZE_SHARES,
 )
 
 _clob_client = None
@@ -52,14 +53,29 @@ def _get_client():
     return _clob_client
 
 
-def place_market_order(token_id: str, amount_dollars: float, side: str = "BUY"):
+def place_market_order(
+    token_id: str,
+    amount_dollars: float,
+    side: str = "BUY",
+    price_hint: float = None,
+):
     """
     Place a market order. For BUY, amount is dollar amount (e.g. 10 = $10).
+    Polymarket requires size in shares >= POLYMARKET_MIN_ORDER_SIZE_SHARES; pass price_hint
+    so we can reject too-small orders (executor passes signal price and clamps amount).
     Returns dict with success, orderID, errorMsg, transactionsHashes, status, etc.
     """
     client = _get_client()
     if not client:
         return {"success": False, "errorMsg": "CLOB client not initialized (PRIVATE_KEY?)"}
+
+    if price_hint is not None and price_hint > 0 and price_hint <= 1:
+        min_dollars = POLYMARKET_MIN_ORDER_SIZE_SHARES * price_hint
+        if amount_dollars < min_dollars:
+            return {
+                "success": False,
+                "errorMsg": f"Market order ${amount_dollars:.2f} would be < {POLYMARKET_MIN_ORDER_SIZE_SHARES} shares at price {price_hint}. Need >= ${min_dollars:.2f}.",
+            }
 
     try:
         from py_clob_client.clob_types import MarketOrderArgs, OrderType
@@ -70,10 +86,10 @@ def place_market_order(token_id: str, amount_dollars: float, side: str = "BUY"):
             token_id=token_id,
             amount=amount_dollars,
             side=side_const,
-            order_type=OrderType.FOK,
+            order_type=OrderType.FAK,
         )
         signed = client.create_market_order(mo)
-        resp = client.post_order(signed, OrderType.FOK)
+        resp = client.post_order(signed, OrderType.FAK)
         return resp if isinstance(resp, dict) else {"success": True, **resp}
     except Exception as e:
         err = str(e).lower()
@@ -84,6 +100,60 @@ def place_market_order(token_id: str, amount_dollars: float, side: str = "BUY"):
         elif "allowance" in err or "approve" in err:
             logger.error("Insufficient allowance - approve exchange on Polymarket UI or setApprovalForAll")
         logger.exception(f"place_market_order failed: {e}")
+        return {"success": False, "errorMsg": str(e)}
+
+
+def place_limit_order(
+    token_id: str,
+    price: float,
+    amount_dollars: float,
+    side: str = "BUY",
+    tick_size: str = "0.01",
+    neg_risk: bool = False,
+):
+    """
+    Place a GTC limit order. For BUY: size in shares = amount_dollars / price.
+    Use when FAK/FOK market order fails with "no match" (thin/empty orderbook).
+    Returns dict with success, orderID, errorMsg, etc.
+    """
+    client = _get_client()
+    if not client:
+        return {"success": False, "errorMsg": "CLOB client not initialized (PRIVATE_KEY?)"}
+    if price <= 0 or price > 1:
+        return {"success": False, "errorMsg": "Limit price must be in (0, 1]"}
+    size_shares = amount_dollars / price
+    size_shares = round(size_shares, 2)
+    if size_shares <= 0:
+        return {"success": False, "errorMsg": "Order size would be zero"}
+    if size_shares < POLYMARKET_MIN_ORDER_SIZE_SHARES:
+        return {
+            "success": False,
+            "errorMsg": f"Order size ({size_shares}) below Polymarket minimum ({POLYMARKET_MIN_ORDER_SIZE_SHARES} shares). Need at least ${POLYMARKET_MIN_ORDER_SIZE_SHARES * price:.2f} at this price.",
+        }
+
+    try:
+        from py_clob_client.clob_types import OrderArgs, OrderType, PartialCreateOrderOptions
+        from py_clob_client.order_builder.constants import BUY, SELL
+
+        side_const = BUY if str(side).upper() == "BUY" else SELL
+        order_args = OrderArgs(
+            token_id=token_id,
+            price=round(price, 2),
+            size=size_shares,
+            side=side_const,
+        )
+        options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk)
+        resp = client.create_and_post_order(order_args, options)
+        return resp if isinstance(resp, dict) else {"success": True, **resp}
+    except Exception as e:
+        err = str(e).lower()
+        if "l2_auth_not_available" in err or "auth" in err:
+            logger.warning("CLOB auth error - try deriving API key")
+        elif "insufficient balance" in err or "balance" in err:
+            logger.error("Insufficient balance - fund your Polymarket wallet")
+        elif "allowance" in err or "approve" in err:
+            logger.error("Insufficient allowance - approve exchange on Polymarket UI")
+        logger.exception(f"place_limit_order failed: {e}")
         return {"success": False, "errorMsg": str(e)}
 
 
@@ -138,10 +208,15 @@ def drop_notifications(ids):
         logger.debug(f"drop_notifications failed: {e}")
 
 
+# USDC (and USDC.e) on Polygon use 6 decimals. CLOB returns balance/allowance as raw string.
+USDC_DECIMALS = 6
+
+
 def get_balance_allowance(asset_type: str = "COLLATERAL", token_id: str = None):
     """
     Get balance and allowance. asset_type: COLLATERAL (USDC) or CONDITIONAL.
-    Returns dict with balance, allowance or None on error.
+    Returns dict with balance (in dollars), allowance (in dollars), and raw balance/allowance,
+    or None on error. CLOB returns balance/allowance as string in raw units (6 decimals for USDC).
     """
     client = _get_client()
     if not client:
@@ -155,7 +230,22 @@ def get_balance_allowance(asset_type: str = "COLLATERAL", token_id: str = None):
         if token_id:
             params.token_id = token_id
         result = client.get_balance_allowance(params)
-        return result
+        if result is None:
+            return None
+        # API returns dict with balance, allowance as strings (raw USDC units, 6 decimals)
+        if not isinstance(result, dict):
+            result = getattr(result, "__dict__", None) or {}
+        raw_balance = result.get("balance") or result.get("balance_allowance") or 0
+        raw_allowance = result.get("allowance") or 0
+        try:
+            bal = float(raw_balance)
+            allow = float(raw_allowance)
+        except (TypeError, ValueError):
+            return {"balance": 0.0, "allowance": 0.0}
+        if asset_type == "COLLATERAL":
+            bal /= 10**USDC_DECIMALS
+            allow /= 10**USDC_DECIMALS
+        return {"balance": bal, "allowance": allow}
     except Exception as e:
         logger.debug(f"get_balance_allowance failed: {e}")
         return None

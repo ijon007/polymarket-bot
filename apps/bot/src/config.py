@@ -7,15 +7,17 @@ load_dotenv(".env.local")
 CONVEX_URL = os.getenv("CONVEX_URL")
 
 # Trading
-PAPER_MODE = True
-BANKROLL = 10.0
-DEFAULT_POSITION_SIZE = 10.0  # $10 per trade (simulate real-money scale)
+PAPER_MODE = False
+BANKROLL = 10.55
+DEFAULT_POSITION_SIZE = 1
+# Polymarket CLOB minimum order size in SHARES (not dollars). Orders with size < this are rejected.
+POLYMARKET_MIN_ORDER_SIZE_SHARES = int(os.getenv("POLYMARKET_MIN_ORDER_SIZE_SHARES", "5"))
 
 # CLOB (Polymarket) - required when PAPER_MODE=False
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")  # EOA private key (hex, with or without 0x)
 POLYMARKET_CLOB_HOST = os.getenv("POLYMARKET_CLOB_HOST", "https://clob.polymarket.com")
 POLYMARKET_CHAIN_ID = int(os.getenv("POLYMARKET_CHAIN_ID", "137"))
-POLYMARKET_SIGNATURE_TYPE = int(os.getenv("POLYMARKET_SIGNATURE_TYPE", "2"))  # 0=EOA, 2=proxy
+POLYMARKET_SIGNATURE_TYPE = int(os.getenv("POLYMARKET_SIGNATURE_TYPE", "1"))  # 0=EOA, 2=proxy
 POLYMARKET_FUNDER_ADDRESS = os.getenv("POLYMARKET_FUNDER_ADDRESS")  # Required if signature_type=2
 # Optional: skip create_or_derive_api_key if set
 POLYMARKET_API_KEY = os.getenv("POLYMARKET_API_KEY")
@@ -30,7 +32,7 @@ STRATEGIES = {
   "last_second": {
     "enabled": True,
     "trigger_seconds": 30,
-    "position_size": DEFAULT_POSITION_SIZE,  # $10 per trade
+    "position_size": DEFAULT_POSITION_SIZE,
     "min_move_pct": 0.05,  # Minimum move % before betting (0 = disabled)
     "min_move_dollars": 0,  # Minimum move $ before betting (0 = disabled)
     "require_resolution_source_match": False,  # If True, skip when Polymarket uses different feed (e.g. Chainlink)
@@ -39,14 +41,14 @@ STRATEGIES = {
 
 STRATEGY_PRIORITY = ["last_second"]
 
-# --- 5-min bot: assets to scan/trade (BTC, ETH, SOL, XRP) ---
+# --- 5-min bot: assets to scan/trade (BTC only for testing; set FIVE_MIN_ASSETS=btc,eth,sol,xrp to enable all) ---
 FIVE_MIN_ASSETS = [
   a.strip().lower()
-  for a in (os.getenv("FIVE_MIN_ASSETS") or "btc,eth,sol,xrp").split(",")
+  for a in (os.getenv("FIVE_MIN_ASSETS") or "btc").split(",")
   if a.strip()
 ]
 if not FIVE_MIN_ASSETS:
-  FIVE_MIN_ASSETS = ["btc", "eth", "sol", "xrp"]
+  FIVE_MIN_ASSETS = ["btc"]
 
 # --- 15-min signal engine (separate process, main_15min.py) ---
 MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "10.0"))
