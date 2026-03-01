@@ -44,7 +44,7 @@ STRATEGY_PRIORITY = ["last_second"]
 # --- 5-min bot: assets to scan/trade (BTC only for testing; set FIVE_MIN_ASSETS=btc,eth,sol,xrp to enable all) ---
 FIVE_MIN_ASSETS = [
   a.strip().lower()
-  for a in (os.getenv("FIVE_MIN_ASSETS") or "btc").split(",")
+  for a in (os.getenv("FIVE_MIN_ASSETS") or "btc,eth").split(",")
   if a.strip()
 ]
 if not FIVE_MIN_ASSETS:
