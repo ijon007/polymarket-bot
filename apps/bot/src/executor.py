@@ -69,7 +69,7 @@ def _execute_real_trade(market, signal):
         f"Position size raised to ${position_size:.2f} so order size in shares is >= {POLYMARKET_MIN_ORDER_SIZE_SHARES}"
       )
 
-  from src.clob_client import place_market_order, get_balance_allowance
+  from src.clob_client import place_market_order, place_limit_order, get_balance_allowance
 
   bal = get_balance_allowance(asset_type="COLLATERAL")
   balance_dollars = None
@@ -87,19 +87,36 @@ def _execute_real_trade(market, signal):
     except (TypeError, ValueError):
       pass
 
+  # Pass worst-price (slippage) so client skips orderbook calc; avoids "no match" when book empty
+  worst_price = min(limit_price + 0.10, 0.99) if limit_price > 0 and limit_price <= 1 else None
   resp = place_market_order(
     token_id=token_id,
     amount_dollars=position_size,
     side="BUY",
     price_hint=limit_price if limit_price > 0 and limit_price <= 1 else None,
+    price=worst_price,
   )
   if not resp.get("success"):
     err = (resp.get("errorMsg") or "").lower()
-    if "no match" in err:
-      logger.warning("Market order could not be filled (no liquidity); skipping trade")
+    if "no match" in err or "no orderbook" in err:
+      logger.warning("Market order could not be filled (no liquidity); trying limit order fallback")
+      if limit_price > 0 and limit_price <= 1:
+        resp = place_limit_order(
+          token_id=token_id,
+          price=round(limit_price + 0.05, 2),
+          amount_dollars=position_size,
+          side="BUY",
+        )
+        if resp.get("success"):
+          logger.info("Limit order fallback placed")
+        else:
+          logger.warning(f"Limit order fallback failed: {resp.get('errorMsg', 'unknown')}")
+          return False
+      else:
+        return False
     else:
       logger.error(f"CLOB order failed: {resp.get('errorMsg', 'unknown')}")
-    return False
+      return False
 
   order_id = resp.get("orderID") or resp.get("order_id") or ""
   tx_hashes = resp.get("transactionsHashes") or resp.get("transaction_hashes") or []

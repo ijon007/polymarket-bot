@@ -58,11 +58,14 @@ def place_market_order(
     amount_dollars: float,
     side: str = "BUY",
     price_hint: float = None,
+    price: float = None,
 ):
     """
     Place a market order. For BUY, amount is dollar amount (e.g. 10 = $10).
     Polymarket requires size in shares >= POLYMARKET_MIN_ORDER_SIZE_SHARES; pass price_hint
     so we can reject too-small orders (executor passes signal price and clamps amount).
+    Pass price (worst-price limit) to bypass orderbook calc when book is empty; otherwise
+    client calculates from orderbook and raises "no match" if no liquidity.
     Returns dict with success, orderID, errorMsg, transactionsHashes, status, etc.
     """
     client = _get_client()
@@ -77,6 +80,11 @@ def place_market_order(
                 "errorMsg": f"Market order ${amount_dollars:.2f} would be < {POLYMARKET_MIN_ORDER_SIZE_SHARES} shares at price {price_hint}. Need >= ${min_dollars:.2f}.",
             }
 
+    # Use provided price as worst-price limit to avoid "no match" when orderbook empty
+    worst_price = None
+    if price is not None and 0 < price <= 1:
+        worst_price = price
+
     try:
         from py_clob_client.clob_types import MarketOrderArgs, OrderType
         from py_clob_client.order_builder.constants import BUY, SELL
@@ -87,19 +95,23 @@ def place_market_order(
             amount=amount_dollars,
             side=side_const,
             order_type=OrderType.FAK,
+            price=worst_price if worst_price is not None else 0,
         )
         signed = client.create_market_order(mo)
         resp = client.post_order(signed, OrderType.FAK)
         return resp if isinstance(resp, dict) else {"success": True, **resp}
     except Exception as e:
         err = str(e).lower()
-        if "l2_auth_not_available" in err or "auth" in err:
+        if "no match" in err or "no orderbook" in err:
+            logger.warning(f"place_market_order: no liquidity ({e})")
+        elif "l2_auth_not_available" in err or "auth" in err:
             logger.warning("CLOB auth error - try deriving API key: create_or_derive_api_creds()")
         elif "insufficient balance" in err or "balance" in err:
             logger.error("Insufficient balance - fund your Polymarket wallet")
         elif "allowance" in err or "approve" in err:
             logger.error("Insufficient allowance - approve exchange on Polymarket UI or setApprovalForAll")
-        logger.exception(f"place_market_order failed: {e}")
+        else:
+            logger.exception(f"place_market_order failed: {e}")
         return {"success": False, "errorMsg": str(e)}
 
 
