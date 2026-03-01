@@ -17,6 +17,7 @@ from src.settlement import settle_trades
 from src.utils.balance import get_current_balance
 
 from src.strategies.last_second import LastSecondStrategy
+from src.strategies.technical_analysis import TechnicalAnalysisStrategy
 
 logger.level("BALANCE", no=22, color="<cyan>")
 
@@ -43,6 +44,8 @@ def main():
   # Initialize strategies
   strategy_instances = {}
 
+  if STRATEGIES.get("technical_analysis", {}).get("enabled"):
+    strategy_instances["technical_analysis"] = TechnicalAnalysisStrategy(STRATEGIES["technical_analysis"])
   if STRATEGIES["last_second"]["enabled"]:
     strategy_instances["last_second"] = LastSecondStrategy(STRATEGIES["last_second"])
 

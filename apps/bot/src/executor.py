@@ -69,7 +69,7 @@ def _execute_real_trade(market, signal):
         f"Position size raised to ${position_size:.2f} so order size in shares is >= {POLYMARKET_MIN_ORDER_SIZE_SHARES}"
       )
 
-  from src.clob_client import place_market_order, get_balance_allowance
+  from src.clob_client import place_market_order, place_limit_order, get_balance_allowance
 
   bal = get_balance_allowance(asset_type="COLLATERAL")
   balance_dollars = None
@@ -95,11 +95,23 @@ def _execute_real_trade(market, signal):
   )
   if not resp.get("success"):
     err = (resp.get("errorMsg") or "").lower()
-    if "no match" in err:
-      logger.warning("Market order could not be filled (no liquidity); skipping trade")
-    else:
-      logger.error(f"CLOB order failed: {resp.get('errorMsg', 'unknown')}")
-    return False
+    if "no match" in err and limit_price > 0 and limit_price <= 1:
+      logger.info("Market order: no liquidity; falling back to limit order")
+      resp = place_limit_order(
+        token_id=token_id,
+        price=limit_price,
+        amount_dollars=position_size,
+        side="BUY",
+        tick_size="0.01",
+        neg_risk=False,
+      )
+    if not resp.get("success"):
+      err = (resp.get("errorMsg") or "").lower()
+      if "no match" in err:
+        logger.warning("Market and limit fallback failed (no liquidity); skipping trade")
+      else:
+        logger.error(f"CLOB order failed: {resp.get('errorMsg', 'unknown')}")
+      return False
 
   order_id = resp.get("orderID") or resp.get("order_id") or ""
   tx_hashes = resp.get("transactionsHashes") or resp.get("transaction_hashes") or []

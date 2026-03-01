@@ -7,7 +7,7 @@ load_dotenv(".env.local")
 CONVEX_URL = os.getenv("CONVEX_URL")
 
 # Trading
-PAPER_MODE = False
+PAPER_MODE = True
 BANKROLL = 10.55
 DEFAULT_POSITION_SIZE = 1
 # Polymarket CLOB minimum order size in SHARES (not dollars). Orders with size < this are rejected.
@@ -29,8 +29,22 @@ SCAN_INTERVAL = 10  # seconds
 
 # STRATEGY CONFIGURATION
 STRATEGIES = {
-  "last_second": {
+  "technical_analysis": {
     "enabled": True,
+    "ema_short": 5,
+    "ema_long": 15,
+    "rsi_period": 14,
+    "rsi_oversold": 30,
+    "rsi_overbought": 70,
+    "roc_period": 10,
+    "roc_threshold": 0.5,
+    "min_data_points": 20,
+    "trade_window_start": 900,
+    "trade_window_end": 120,
+    "position_size": DEFAULT_POSITION_SIZE * 1.5,
+  },
+  "last_second": {
+    "enabled": False,
     "trigger_seconds": 30,
     "position_size": DEFAULT_POSITION_SIZE,
     "min_move_pct": 0.05,  # Minimum move % before betting (0 = disabled)
@@ -39,9 +53,9 @@ STRATEGIES = {
   },
 }
 
-STRATEGY_PRIORITY = ["last_second"]
+STRATEGY_PRIORITY = ["technical_analysis", "last_second"]
 
-# --- 5-min bot: assets to scan/trade (BTC only for testing; set FIVE_MIN_ASSETS=btc,eth,sol,xrp to enable all) ---
+# --- 5-min bot: assets to scan/trade (set FIVE_MIN_ASSETS=btc,eth,sol,xrp to enable all) ---
 FIVE_MIN_ASSETS = [
   a.strip().lower()
   for a in (os.getenv("FIVE_MIN_ASSETS") or "btc").split(",")

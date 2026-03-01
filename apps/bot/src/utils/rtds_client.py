@@ -19,7 +19,7 @@ _WS_URL = "wss://ws-live-data.polymarket.com"
 _PING_TIMEOUT = 3
 _RECONNECT_DELAY = 5
 _MAX_RECONNECT_DELAY = 60
-_BUFFER_MS = 10 * 60 * 1000  # 10 minutes
+_BUFFER_MS = 20 * 60 * 1000  # 20 minutes (for technical analysis EMA(15))
 _START_PRICE_CACHE_MAX_AGE_SEC = 30 * 60  # keep cached start prices for 30 min
 _RECENT_WINDOW_SEC = 90  # for new window: if no tick at or before ts, use first tick in buffer
 
@@ -195,6 +195,16 @@ def get_latest_sol_usd() -> Optional[float]:
 def get_latest_xrp_usd() -> Optional[float]:
   with _lock:
     return _latest.get("xrp/usd")
+
+
+def get_btc_price_history() -> List[Tuple[int, float]]:
+  """
+  Return BTC price history from RTDS buffer: [(timestamp_ms, price), ...] sorted by time.
+  Used by Technical Analysis strategy for EMA, RSI, ROC.
+  """
+  with _lock:
+    buf = _buffers["btc/usd"]
+    return list(buf) if buf else []
 
 
 def get_btc_move_60s() -> Optional[float]:

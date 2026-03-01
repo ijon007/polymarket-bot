@@ -1,5 +1,5 @@
 from loguru import logger
-from typing import Optional
+from typing import List, Optional, Tuple
 
 
 def get_btc_price_source() -> Optional[str]:
@@ -39,6 +39,16 @@ def _price_at_timestamp(ts: int, asset: str, rtds_fn_name: str) -> Optional[floa
 def get_btc_price_at_timestamp(ts: int) -> Optional[float]:
   """BTC price at a Unix timestamp (e.g. 15min window start). None if no data yet."""
   return _price_at_timestamp(ts, "btc", "get_btc_at_timestamp")
+
+
+def get_btc_price_history() -> List[Tuple[int, float]]:
+  """BTC price history from RTDS: [(timestamp_ms, price), ...] for Technical Analysis."""
+  try:
+    from src.utils.rtds_client import get_btc_price_history as _get
+    return _get()
+  except Exception as e:
+    logger.debug(f"RTDS price history unavailable: {e}")
+    return []
 
 
 def get_eth_price_at_timestamp(ts: int) -> Optional[float]:

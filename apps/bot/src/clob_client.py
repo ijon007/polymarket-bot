@@ -93,13 +93,17 @@ def place_market_order(
         return resp if isinstance(resp, dict) else {"success": True, **resp}
     except Exception as e:
         err = str(e).lower()
+        if "no match" in err:
+            logger.debug("Market order: no liquidity on orderbook (will try limit fallback)")
+            return {"success": False, "errorMsg": str(e)}
         if "l2_auth_not_available" in err or "auth" in err:
             logger.warning("CLOB auth error - try deriving API key: create_or_derive_api_creds()")
         elif "insufficient balance" in err or "balance" in err:
             logger.error("Insufficient balance - fund your Polymarket wallet")
         elif "allowance" in err or "approve" in err:
             logger.error("Insufficient allowance - approve exchange on Polymarket UI or setApprovalForAll")
-        logger.exception(f"place_market_order failed: {e}")
+        else:
+            logger.error(f"place_market_order failed: {e}")
         return {"success": False, "errorMsg": str(e)}
 
 
@@ -153,7 +157,8 @@ def place_limit_order(
             logger.error("Insufficient balance - fund your Polymarket wallet")
         elif "allowance" in err or "approve" in err:
             logger.error("Insufficient allowance - approve exchange on Polymarket UI")
-        logger.exception(f"place_limit_order failed: {e}")
+        else:
+            logger.error(f"place_limit_order failed: {e}")
         return {"success": False, "errorMsg": str(e)}
 
 
